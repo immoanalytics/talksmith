@@ -1,0 +1,2715 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Talksmith — Meeting Assistant</title>
+<style>
+/* Talksmith — Meeting assistant design system */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* Dark mode (default, meeting-friendly) */
+  --bg-0: oklch(0.16 0.005 260);        /* app background */
+  --bg-1: oklch(0.19 0.006 260);        /* panel */
+  --bg-2: oklch(0.22 0.007 260);        /* raised card */
+  --bg-3: oklch(0.26 0.008 260);        /* hover */
+  --bg-inset: oklch(0.14 0.005 260);    /* inset / transcript */
+
+  --line: oklch(0.28 0.008 260 / 0.8);
+  --line-strong: oklch(0.34 0.01 260 / 1);
+  --line-soft: oklch(0.24 0.007 260 / 0.7);
+
+  --ink-0: oklch(0.97 0.003 260);       /* primary text */
+  --ink-1: oklch(0.82 0.006 260);       /* secondary */
+  --ink-2: oklch(0.64 0.008 260);       /* tertiary */
+  --ink-3: oklch(0.48 0.008 260);       /* placeholder */
+
+  --blue: oklch(0.72 0.14 250);
+  --blue-soft: oklch(0.72 0.14 250 / 0.15);
+  --blue-line: oklch(0.72 0.14 250 / 0.35);
+
+  --amber: oklch(0.80 0.14 75);
+  --amber-soft: oklch(0.80 0.14 75 / 0.14);
+  --amber-line: oklch(0.80 0.14 75 / 0.35);
+
+  --rose: oklch(0.70 0.18 18);
+  --rose-soft: oklch(0.70 0.18 18 / 0.15);
+  --rose-line: oklch(0.70 0.18 18 / 0.4);
+
+  --green: oklch(0.78 0.12 160);
+  --green-soft: oklch(0.78 0.12 160 / 0.14);
+
+  --accent: var(--blue);
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+
+  --shadow-pop: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 30px rgba(0,0,0,0.35);
+  --shadow-card: 0 1px 0 rgba(255,255,255,0.03) inset, 0 1px 2px rgba(0,0,0,0.3);
+
+  --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, Menlo, monospace;
+
+  --speed: 180ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+[data-theme="light"] {
+  --bg-0: oklch(0.985 0.003 260);
+  --bg-1: oklch(0.97 0.004 260);
+  --bg-2: oklch(1 0 0);
+  --bg-3: oklch(0.95 0.005 260);
+  --bg-inset: oklch(0.965 0.004 260);
+  --line: oklch(0.88 0.006 260);
+  --line-strong: oklch(0.82 0.008 260);
+  --line-soft: oklch(0.92 0.005 260);
+  --ink-0: oklch(0.20 0.008 260);
+  --ink-1: oklch(0.38 0.008 260);
+  --ink-2: oklch(0.52 0.008 260);
+  --ink-3: oklch(0.68 0.006 260);
+  --blue: oklch(0.55 0.17 250);
+  --blue-soft: oklch(0.55 0.17 250 / 0.08);
+  --blue-line: oklch(0.55 0.17 250 / 0.25);
+  --amber: oklch(0.62 0.15 70);
+  --amber-soft: oklch(0.62 0.15 70 / 0.09);
+  --amber-line: oklch(0.62 0.15 70 / 0.3);
+  --rose: oklch(0.55 0.20 18);
+  --rose-soft: oklch(0.55 0.20 18 / 0.08);
+  --rose-line: oklch(0.55 0.20 18 / 0.3);
+  --green: oklch(0.55 0.14 160);
+  --green-soft: oklch(0.55 0.14 160 / 0.09);
+  --shadow-pop: 0 1px 0 rgba(255,255,255,1) inset, 0 8px 30px rgba(15,20,30,0.1);
+  --shadow-card: 0 1px 2px rgba(15,20,30,0.04);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-0);
+  color: var(--ink-0);
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  font-feature-settings: "ss01", "cv11";
+}
+
+button { font-family: inherit; color: inherit; }
+::selection { background: var(--blue-soft); }
+
+/* scrollbars */
+.scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 4px; }
+.scroll::-webkit-scrollbar-track { background: transparent; }
+.scroll { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+
+/* util */
+.mono { font-family: var(--font-mono); font-feature-settings: "tnum", "zero"; }
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--ink-2);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* animations */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeOut {
+  to { opacity: 0; transform: translateY(-4px); }
+}
+@keyframes pulseEdge {
+  0%, 100% { opacity: 0.0; }
+  50%      { opacity: 1; }
+}
+@keyframes pulseDot {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.15); }
+}
+@keyframes breathe {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+@keyframes levelBar {
+  0%, 100% { transform: scaleY(0.35); }
+  50%      { transform: scaleY(1); }
+}
+@keyframes shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+
+// === components/Icons.jsx ===
+// Icons.jsx — minimal line icons for Talksmith
+const Icon = ({ d, size = 14, stroke = 1.5, style = {} }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none"
+       stroke="currentColor" strokeWidth={stroke}
+       strokeLinecap="round" strokeLinejoin="round" style={style}>
+    {d}
+  </svg>
+);
+
+const Icons = {
+  mic:       <path d="M8 1.5a2 2 0 012 2v4a2 2 0 01-4 0v-4a2 2 0 012-2zM4 7.5a4 4 0 008 0M8 11.5v3M5.5 14.5h5" />,
+  play:      <path d="M4 3l9 5-9 5V3z" fill="currentColor" stroke="none" />,
+  pause:     <><rect x="4" y="3" width="3" height="10" fill="currentColor" stroke="none"/><rect x="9" y="3" width="3" height="10" fill="currentColor" stroke="none"/></>,
+  stop:      <rect x="4" y="4" width="8" height="8" fill="currentColor" stroke="none"/>,
+  chev:      <path d="M6 3l4 5-4 5" />,
+  chevDown:  <path d="M3 6l5 4 5-4" />,
+  chevUp:    <path d="M3 10l5-4 5 4" />,
+  x:         <path d="M4 4l8 8M12 4l-8 8" />,
+  check:     <path d="M3 8.5l3 3 7-7" />,
+  dot:       <circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/>,
+  sparkle:   <path d="M8 2v4M8 10v4M2 8h4M10 8h4M4 4l2.5 2.5M9.5 9.5L12 12M12 4L9.5 6.5M6.5 9.5L4 12"/>,
+  wave:      <path d="M1 8c1-3 2-3 3 0s2 3 3 0 2-3 3 0 2 3 3 0"/>,
+  clock:     <><circle cx="8" cy="8" r="6"/><path d="M8 4.5v4l2.5 1.5"/></>,
+  cal:       <><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1.5v3M11 1.5v3M2 6.5h12"/></>,
+  user:      <><circle cx="8" cy="6" r="2.5"/><path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5"/></>,
+  users:     <><circle cx="6" cy="6" r="2.5"/><path d="M1.5 14c0-2.8 2-4.5 4.5-4.5s4.5 1.7 4.5 4.5"/><circle cx="12" cy="5.5" r="2" /><path d="M10.5 14c0-2.5 1.5-4 3-4"/></>,
+  keyboard:  <><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M4 7h.01M7 7h.01M10 7h.01M13 7h.01M4 10h8"/></>,
+  bell:      <path d="M4 11c0-4 1.5-6 4-6s4 2 4 6h1v1H3v-1h1zM6.5 13.5a1.5 1.5 0 003 0"/>,
+  bellOff:   <><path d="M4 11c0-4 1.5-6 4-6s4 2 4 6h1v1H3v-1h1zM6.5 13.5a1.5 1.5 0 003 0"/><path d="M2 2l12 12"/></>,
+  settings:  <><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M13 3l-1.5 1.5M4.5 11.5L3 13"/></>,
+  search:    <><circle cx="7" cy="7" r="4"/><path d="M10 10l3.5 3.5"/></>,
+  expand:    <path d="M3 6V3h3M10 3h3v3M13 10v3h-3M6 13H3v-3"/>,
+  minimize:  <path d="M6 3v3H3M10 3v3h3M10 13v-3h3M6 13v-3H3"/>,
+  trendUp:   <path d="M2 11l4-4 3 3 5-6M10 4h4v4"/>,
+  arrow:     <path d="M3 8h10M9 4l4 4-4 4"/>,
+  home:      <path d="M2 8l6-5 6 5v6H9v-4H7v4H2V8z"/>,
+  pulse:     <path d="M1 8h3l1.5-4 2 8 1.5-4h6"/>,
+  list:      <path d="M3 4h10M3 8h10M3 12h10"/>,
+  circle:    <circle cx="8" cy="8" r="5.5"/>,
+  interrupt: <path d="M3 4l4 4-4 4M8 3v10M13 4l-4 4 4 4"/>,
+  flag:      <path d="M3 1v13M3 2h9l-2 3 2 3H3"/>,
+  goal:      <><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="3"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/></>,
+  info:      <><circle cx="8" cy="8" r="6"/><path d="M8 7.5v4M8 5v.01"/></>,
+  snooze:    <><circle cx="8" cy="8" r="6"/><path d="M6 6h4l-4 4h4"/></>,
+  moon:      <path d="M13 9.5A5 5 0 017.5 3a1 1 0 00-1-1.3 6 6 0 107.9 7.9 1 1 0 00-1.4-1z"/>,
+  sun:       <><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M13 3l-1.5 1.5M4.5 11.5L3 13"/></>,
+};
+
+const I = (name, props = {}) => <Icon d={Icons[name]} {...props} />;
+
+window.I = I;
+window.Icons = Icons;
+
+
+// === components/Primitives.jsx ===
+// Primitives.jsx — shared UI atoms
+const appStyles = {
+  chrome: {
+    height: '100vh', width: '100vw',
+    background: 'var(--bg-0)',
+    display: 'flex', flexDirection: 'column',
+    color: 'var(--ink-0)',
+  },
+};
+
+// Title bar — custom app window chrome (not macOS; our own)
+function TitleBar({ title, subtitle, meetingState, onSettings, activeScreen, onScreenChange }) {
+  const screens = [
+    { id: 'live', label: 'Live', key: '1' },
+    { id: 'overlay', label: 'Compact', key: '2' },
+    { id: 'review', label: 'Review', key: '3' },
+    { id: 'profile', label: 'Profile', key: '4' },
+  ];
+  return (
+    <div style={{
+      height: 44, flexShrink: 0,
+      display: 'flex', alignItems: 'center',
+      padding: '0 12px',
+      borderBottom: '1px solid var(--line)',
+      background: 'var(--bg-1)',
+      position: 'relative',
+    }}>
+      {/* Traffic-ish dots (our own product, not macOS) */}
+      <div style={{ display: 'flex', gap: 7, marginRight: 18, alignItems: 'center' }}>
+        <span style={{ width: 11, height: 11, borderRadius: '50%', background: 'var(--line-strong)' }} />
+        <span style={{ width: 11, height: 11, borderRadius: '50%', background: 'var(--line-strong)' }} />
+        <span style={{ width: 11, height: 11, borderRadius: '50%', background: 'var(--line-strong)' }} />
+      </div>
+
+      {/* Brand */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 20 }}>
+        <BrandMark />
+        <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em' }}>Talksmith</div>
+      </div>
+
+      {/* Screen tabs */}
+      <div style={{ display: 'flex', gap: 2, background: 'var(--bg-inset)', padding: 2, borderRadius: 8, border: '1px solid var(--line-soft)' }}>
+        {screens.map(s => (
+          <button key={s.id} onClick={() => onScreenChange(s.id)} style={{
+            border: 'none', background: activeScreen === s.id ? 'var(--bg-2)' : 'transparent',
+            color: activeScreen === s.id ? 'var(--ink-0)' : 'var(--ink-2)',
+            fontSize: 12, fontWeight: 500, padding: '4px 10px', borderRadius: 6,
+            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+            boxShadow: activeScreen === s.id ? 'var(--shadow-card)' : 'none',
+            transition: 'all var(--speed) var(--ease)',
+          }}>
+            {s.label}
+            <span className="mono" style={{ fontSize: 9, color: 'var(--ink-3)', padding: '1px 4px', border: '1px solid var(--line)', borderRadius: 3 }}>⌘{s.key}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Center — meeting info */}
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10 }}>
+        {meetingState && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '5px 10px',
+            background: meetingState.recording ? 'var(--rose-soft)' : 'var(--bg-inset)',
+            border: `1px solid ${meetingState.recording ? 'var(--rose-line)' : 'var(--line)'}`,
+            borderRadius: 20, fontSize: 12,
+          }}>
+            {meetingState.recording ? (
+              <>
+                <span style={{
+                  width: 7, height: 7, borderRadius: '50%',
+                  background: 'var(--rose)', animation: 'pulseDot 1.4s ease-in-out infinite',
+                }} />
+                <span style={{ color: 'var(--rose)', fontWeight: 500 }}>Listening</span>
+                <span style={{ color: 'var(--ink-2)' }}>·</span>
+                <span className="mono" style={{ color: 'var(--ink-1)' }}>{meetingState.timecode}</span>
+              </>
+            ) : (
+              <>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--ink-3)' }} />
+                <span style={{ color: 'var(--ink-2)' }}>Idle</span>
+              </>
+            )}
+          </div>
+        )}
+        {subtitle && (
+          <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>{subtitle}</div>
+        )}
+      </div>
+
+      {/* Right */}
+      <div style={{ display: 'flex', gap: 4 }}>
+        <IconButton tip="Mute coaching (⌘M)">{I('bell', { size: 13 })}</IconButton>
+        <IconButton tip="Settings" onClick={onSettings}>{I('settings', { size: 13 })}</IconButton>
+      </div>
+    </div>
+  );
+}
+
+function BrandMark({ size = 18 }) {
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: 5,
+      background: 'var(--ink-0)', color: 'var(--bg-0)',
+      display: 'grid', placeItems: 'center',
+      fontFamily: 'var(--font-mono)', fontSize: size * 0.55, fontWeight: 600,
+      letterSpacing: '-0.05em',
+    }}>T</div>
+  );
+}
+
+function IconButton({ children, tip, onClick, active, danger, size = 28 }) {
+  const [hover, setHover] = React.useState(false);
+  return (
+    <button onClick={onClick}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      title={tip} style={{
+        width: size, height: size,
+        display: 'grid', placeItems: 'center',
+        background: active ? 'var(--bg-3)' : hover ? 'var(--bg-2)' : 'transparent',
+        color: danger ? 'var(--rose)' : active ? 'var(--ink-0)' : 'var(--ink-1)',
+        border: '1px solid transparent',
+        borderColor: active ? 'var(--line)' : 'transparent',
+        borderRadius: 7, cursor: 'pointer',
+        transition: 'all var(--speed) var(--ease)',
+      }}>{children}</button>
+  );
+}
+
+function Kbd({ children }) {
+  return (
+    <span className="mono" style={{
+      display: 'inline-flex', alignItems: 'center',
+      fontSize: 10, padding: '1px 5px',
+      background: 'var(--bg-inset)',
+      border: '1px solid var(--line)',
+      borderBottom: '2px solid var(--line-strong)',
+      borderRadius: 4, color: 'var(--ink-1)',
+      minWidth: 16, justifyContent: 'center',
+    }}>{children}</span>
+  );
+}
+
+function Panel({ title, eyebrow, right, children, style = {}, dense = false }) {
+  return (
+    <div style={{
+      background: 'var(--bg-1)',
+      border: '1px solid var(--line)',
+      borderRadius: 'var(--radius-lg)',
+      display: 'flex', flexDirection: 'column',
+      overflow: 'hidden',
+      ...style,
+    }}>
+      {(title || eyebrow) && (
+        <div style={{
+          display: 'flex', alignItems: 'center',
+          padding: dense ? '10px 14px' : '14px 16px',
+          borderBottom: '1px solid var(--line-soft)',
+          gap: 10, flexShrink: 0,
+        }}>
+          {eyebrow && <span className="eyebrow">{eyebrow}</span>}
+          {title && <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em' }}>{title}</div>}
+          <div style={{ flex: 1 }} />
+          {right}
+        </div>
+      )}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{children}</div>
+    </div>
+  );
+}
+
+// Tiny meter bar
+function Meter({ value, max = 100, color = 'var(--ink-1)', height = 4, bg = 'var(--line-soft)', animated = true }) {
+  return (
+    <div style={{
+      width: '100%', height, background: bg, borderRadius: height/2, overflow: 'hidden',
+    }}>
+      <div style={{
+        width: `${Math.min(100, (value/max)*100)}%`, height: '100%',
+        background: color, borderRadius: height/2,
+        transition: animated ? 'width 600ms var(--ease)' : 'none',
+      }} />
+    </div>
+  );
+}
+
+function Confidence({ level = 0.82 }) {
+  // tiny 4-bar confidence meter
+  const bars = [0.25, 0.5, 0.75, 1.0];
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'flex-end', gap: 1.5, height: 10 }}
+         title={`Confidence ${Math.round(level*100)}%`}>
+      {bars.map((b, i) => (
+        <span key={i} style={{
+          width: 2, height: 3 + i*2, borderRadius: 1,
+          background: level >= b ? 'var(--ink-1)' : 'var(--line-strong)',
+        }}/>
+      ))}
+    </div>
+  );
+}
+
+function Chip({ children, tone = 'neutral', size = 'md' }) {
+  const tones = {
+    neutral: { bg: 'var(--bg-inset)', color: 'var(--ink-1)', border: 'var(--line)' },
+    blue: { bg: 'var(--blue-soft)', color: 'var(--blue)', border: 'var(--blue-line)' },
+    amber: { bg: 'var(--amber-soft)', color: 'var(--amber)', border: 'var(--amber-line)' },
+    rose: { bg: 'var(--rose-soft)', color: 'var(--rose)', border: 'var(--rose-line)' },
+    green: { bg: 'var(--green-soft)', color: 'var(--green)', border: 'oklch(0.78 0.12 160 / 0.35)' },
+  }[tone];
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      padding: size === 'sm' ? '1px 6px' : '2px 8px',
+      background: tones.bg, color: tones.color,
+      border: `1px solid ${tones.border}`,
+      borderRadius: 4, fontSize: size === 'sm' ? 10 : 11, fontWeight: 500,
+      lineHeight: 1.4, whiteSpace: 'nowrap',
+    }}>{children}</span>
+  );
+}
+
+Object.assign(window, { TitleBar, BrandMark, IconButton, Kbd, Panel, Meter, Confidence, Chip, appStyles });
+
+
+// === components/MeetingData.jsx ===
+// MeetingData.jsx — Simulated live meeting: script, nudges, metrics
+// Drives the live dashboard. Exposes a useMeetingSim() hook.
+
+const PARTICIPANTS = [
+  { id: 'you', name: 'You',            color: 'oklch(0.72 0.14 250)', initials: 'YA', role: 'Host' },
+  { id: 'pri', name: 'Priya Shanmugam', color: 'oklch(0.78 0.13 150)', initials: 'PS', role: 'PM' },
+  { id: 'dan', name: 'Daniela Rojas',   color: 'oklch(0.78 0.13 30)',  initials: 'DR', role: 'Design' },
+  { id: 'mar', name: 'Marcus Bell',     color: 'oklch(0.75 0.12 310)', initials: 'MB', role: 'Eng' },
+];
+
+// Transcript script — (speakerId, text, t in seconds, optionalTags)
+const SCRIPT = [
+  { t: 0,    s: 'you', txt: "Okay — let's walk through the Q2 roadmap. I've been thinking about this for a while and I want to share where my head's at before we open it up." },
+  { t: 12,   s: 'you', txt: "The core thesis is that we've been shipping too many small features and the north-star metric hasn't moved. So I'm proposing we consolidate onto two bets this quarter." },
+  { t: 26,   s: 'you', txt: "The first one is the onboarding rework — which I think is obvious, the funnel data is clear. The second is the search rebuild, and I know that's going to be more contentious." },
+  { t: 42,   s: 'pri', txt: "Can I jump in for a—" , interrupted: true },
+  { t: 43,   s: 'you', txt: "—let me just finish this thought. The reason search matters is that retention at week four is gated by discovery, and we've seen that in every cohort study since January." },
+  { t: 60,   s: 'pri', txt: "Got it. I do want to push back a little on the framing though. The cohort studies you're referencing — those were run before the feed redesign shipped." },
+  { t: 74,   s: 'dan', txt: "Yeah, and honestly the qualitative work we did last sprint suggests discovery isn't the top friction anymore. It's trust signals on individual items." },
+  { t: 88,   s: 'mar', txt: "From an engineering standpoint, a full search rebuild is probably eight to ten weeks. That's the whole quarter for two engineers." },
+  { t: 102,  s: 'you', txt: "That's fair. I hear you. Let me think about that." },
+  { t: 110,  s: 'pri', txt: "Could we maybe scope it down? Like — what's the smallest version of the search bet that would tell us if it's worth doing the full rebuild next quarter?" },
+  { t: 126,  s: 'dan', txt: "A two-week spike on ranking alone would answer most of the open questions I have." },
+  { t: 138,  s: 'you', txt: "Okay, I like that. So what if we do onboarding as the big bet, and a two-week search ranking spike as the exploration?" },
+  { t: 154,  s: 'mar', txt: "That works for capacity. I can have Rohan on the spike." },
+  { t: 162,  s: 'pri', txt: "I'm in. Who's writing this up?" },
+];
+
+// Nudges, timed. Each nudge has id, type, t (s), title, detail, confidence, action
+const NUDGE_SCRIPT = [
+  { t: 18, id: 'n1',
+    type: 'suggest',
+    title: "You've been speaking for 18s",
+    detail: "You're framing the decision before hearing input. Consider opening the floor.",
+    confidence: 0.78,
+    tone: 'amber',
+    signals: ['Talk ratio 92%', 'No questions asked yet', 'Pace +14% vs baseline'],
+    why: "ICF active listening · open-ended question would invite the 3 silent participants.",
+    action: { label: 'Suggest phrase', phrase: '"Before I go further — what are you each seeing?"' },
+    duration: 14,
+  },
+  { t: 43, id: 'n2',
+    type: 'critical',
+    title: "Interrupt detected — pause",
+    detail: "You cut Priya off 0.4s in. This is the 3rd competitive overlap this week.",
+    confidence: 0.94,
+    tone: 'rose',
+    signals: ['Competitive overlap (not backchannel)', 'Priya floor-time 0.4s', 'Pattern: 3× this week'],
+    why: "Psychological-safety risk. Repair now costs less than letting it compound.",
+    action: { label: 'Suggest repair', phrase: '"Sorry Priya — you were about to say something. Go ahead."' },
+    duration: 12,
+  },
+  { t: 72, id: 'n3',
+    type: 'insight',
+    title: "LSM dropping — misalignment",
+    detail: "Linguistic style matching fell from 0.72 → 0.50. Others aren't mirroring you.",
+    confidence: 0.58,
+    tone: 'blue',
+    signals: ['LSM Δ −0.22', 'Pronoun mirroring ↓', 'Function-word overlap weak'],
+    why: "Low LSM predicts disengagement. Paraphrase the last objection to re-establish rapport.",
+    action: { label: 'Suggest phrase', phrase: '"So what I\'m hearing is the framing — not the bet itself — is the issue?"' },
+    duration: 10,
+  },
+  { t: 98, id: 'n4',
+    type: 'suggest',
+    title: "Acknowledge Marcus's constraint",
+    detail: "Capacity objection unacknowledged for 6s. Acknowledge before redirecting.",
+    confidence: 0.71,
+    tone: 'amber',
+    signals: ['Task-oriented objection', 'Unacknowledged 6s', 'IPA equilibrium tilted task-heavy'],
+    why: "Bales IPA: socio-emotional ack before task-reply maintains team equilibrium.",
+    action: { label: 'Suggest phrase', phrase: '"That\'s a real constraint — thanks for flagging."' },
+    duration: 8,
+  },
+  { t: 130, id: 'n5',
+    type: 'insight',
+    title: "Opportunity to summarize",
+    detail: "Discussion has converged. A quick summary will lock in the decision.",
+    confidence: 0.83,
+    tone: 'blue',
+    signals: ['Convergence detected', 'No new arguments 20s', 'GROW → Will phase'],
+    why: "GROW framework: move to 'Will' before momentum fades.",
+    action: { label: 'Summarize', phrase: '"So — onboarding as the big bet, two-week search spike. Everyone aligned?"' },
+    duration: 12,
+  },
+  { t: 155, id: 'n6',
+    type: 'insight',
+    title: "Good recovery",
+    detail: "You acknowledged the capacity point and folded it in. Talk ratio balanced.",
+    confidence: 0.88,
+    tone: 'green',
+    signals: ['Talk ratio 48%', 'LSM recovered to 0.81', 'Positive tone shift'],
+    why: "Reinforcement — this pattern helps your 'Improve listening' goal.",
+    action: null,
+    duration: 8,
+    positive: true,
+  },
+];
+
+// Global timeline of key events for the Review screen
+const TIMELINE_EVENTS = [
+  { t: 18,  type: 'dominance', label: 'Dominance spike', tone: 'amber' },
+  { t: 42,  type: 'interrupt', label: 'Interruption',     tone: 'rose' },
+  { t: 72,  type: 'tone',      label: 'Tone shift · tense', tone: 'blue' },
+  { t: 98,  type: 'objection', label: 'Objection raised', tone: 'amber' },
+  { t: 130, type: 'converge',  label: 'Convergence',      tone: 'blue' },
+  { t: 155, type: 'recovery',  label: 'Good recovery',    tone: 'green' },
+];
+
+function fmtTime(s) {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
+
+// Hook — returns current meeting simulation state
+function useMeetingSim({ running, speed = 1, startAt = 0 }) {
+  const [t, setT] = React.useState(startAt);
+  const [dismissed, setDismissed] = React.useState(new Set());
+  const rafRef = React.useRef();
+  const lastRef = React.useRef();
+
+  React.useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => {
+      setT(prev => {
+        const next = prev + 0.1 * speed;
+        return next > 175 ? 0 : next;
+      });
+    }, 100);
+    return () => clearInterval(id);
+  }, [running, speed]);
+
+  // transcript up to t
+  const transcript = SCRIPT.filter(l => l.t <= t);
+
+  // active nudges — within duration window
+  const activeNudges = NUDGE_SCRIPT.filter(n =>
+    t >= n.t && t <= n.t + n.duration && !dismissed.has(n.id)
+  );
+
+  // recent history of nudges (for feed)
+  const nudgeHistory = NUDGE_SCRIPT.filter(n => t >= n.t).slice().reverse();
+
+  // live metrics — derived from transcript up to t
+  const metrics = deriveMetrics(transcript, t);
+
+  return {
+    t, setT,
+    transcript,
+    activeNudges,
+    nudgeHistory,
+    metrics,
+    dismissNudge: (id) => setDismissed(prev => new Set(prev).add(id)),
+    participants: PARTICIPANTS,
+    timelineEvents: TIMELINE_EVENTS,
+    totalDuration: 175,
+    tc: fmtTime(t),
+  };
+}
+
+function deriveMetrics(transcript, t) {
+  // Talk time per participant (approximated by words in their lines)
+  const times = {};
+  PARTICIPANTS.forEach(p => times[p.id] = 0);
+  transcript.forEach(l => {
+    times[l.s] = (times[l.s] || 0) + l.txt.split(/\s+/).length * 0.35;
+  });
+  const total = Object.values(times).reduce((a, b) => a + b, 0) || 1;
+  const talkRatio = PARTICIPANTS.map(p => ({
+    ...p,
+    seconds: times[p.id],
+    pct: Math.round((times[p.id] / total) * 100),
+  }));
+
+  // Interruption matrix — you→others and others→you
+  // From the script, t=42 you cut Priya off at 43 (you→priya).
+  let youInterruptedOthers = transcript.filter(l => l.interrupted && l.s !== 'you').length;
+  let othersInterruptedYou = transcript.filter(l => l.interrupted && l.s === 'you').length;
+  const interruptions = youInterruptedOthers + othersInterruptedYou;
+
+  // Sentiment curve (synthetic but meeting-shaped)
+  const sentiment = Math.max(0, Math.min(1,
+    0.5
+    + (t > 18 && t < 44 ? -0.1 : 0)
+    + (t > 42 && t < 74 ? -0.18 : 0)
+    + (t > 72 && t < 100 ? -0.22 : 0)
+    + (t > 130 ? 0.2 : 0)
+  ));
+
+  // Engagement
+  const recent = transcript.filter(l => l.t > t - 45);
+  const uniqueSpeakers = new Set(recent.map(l => l.s)).size;
+  const questions = recent.filter(l => l.txt.includes('?')).length;
+  const engagement = Math.min(1, 0.3 + uniqueSpeakers * 0.15 + questions * 0.12);
+
+  // Silence — gap since last line + contextual classification
+  const last = transcript[transcript.length - 1];
+  const silenceGap = last ? Math.max(0, t - last.t - last.txt.split(/\s+/).length * 0.35) : 0;
+  // Context: if last line was a question, silence is "thinking" — healthy up to 6s
+  const lastWasQuestion = last?.txt?.includes('?');
+  const silenceContext = silenceGap < 1.5 ? 'flow'
+    : lastWasQuestion ? (silenceGap < 6 ? 'thinking' : 'stalled')
+    : (silenceGap < 3 ? 'pause' : 'dead-air');
+
+  // IPA equilibrium (Bales) — task vs socio-emotional
+  // Heuristic: questions + agreement markers ("yeah","got it","fair","thanks") = socio
+  // declaratives / directives = task
+  const lower = transcript.map(l => l.txt.toLowerCase());
+  const socio = lower.filter(x => /\b(thanks|fair|got it|i hear you|yeah|i'm in|works for|sorry)\b/.test(x)).length;
+  const task = transcript.length - socio;
+  const ipaTaskRatio = transcript.length ? task / transcript.length : 0.5;
+  // optimal ~0.65 task, 0.35 socio
+  const ipaDeviation = Math.abs(ipaTaskRatio - 0.65);
+
+  // LSM (Linguistic Style Matching) — function-word overlap between You and others
+  // Simulated smooth curve: high at start (monologue inflates), drops at 42 interrupt,
+  // recovers at 102+ when you concede.
+  const lsmBase = 0.72;
+  const lsm = Math.max(0.42, Math.min(0.92,
+    lsmBase
+    + (t > 42 && t < 74 ? -0.22 : 0)
+    + (t > 72 && t < 102 ? -0.15 : 0)
+    + (t > 102 ? 0.12 : 0)
+    + (t > 138 ? 0.05 : 0)
+  ));
+
+  // Audio quality — simulated dip around t=66–72 to demo low-confidence state
+  const audioQuality = (t > 66 && t < 72) ? 0.38 : 0.94;
+
+  // Acoustic tension (jitter/shimmer proxy) — spikes during interrupt + tense stretch
+  const tension = Math.max(0, Math.min(1,
+    0.22
+    + (t > 42 && t < 50 ? 0.55 : 0)
+    + (t > 72 && t < 92 ? 0.38 : 0)
+    + (t > 130 ? -0.1 : 0)
+  ));
+
+  return {
+    talkRatio, interruptions, sentiment, engagement, silenceGap, silenceContext,
+    youInterruptedOthers, othersInterruptedYou,
+    ipaTaskRatio, ipaDeviation,
+    lsm,
+    audioQuality,
+    tension,
+    yourTalkPct: talkRatio.find(p => p.id === 'you')?.pct ?? 0,
+  };
+}
+
+window.MeetingData = {
+  PARTICIPANTS, SCRIPT, NUDGE_SCRIPT, TIMELINE_EVENTS, fmtTime, useMeetingSim,
+};
+
+
+// === components/Nudge.jsx ===
+// Nudge.jsx — The central component: a coaching cue.
+// Three variants: card | inline | pill (user can toggle via Tweaks)
+
+function Nudge({ nudge, onDismiss, onSnooze, variant = 'card', compact = false }) {
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => { setMounted(true); }, []);
+  const [phraseOpen, setPhraseOpen] = React.useState(false);
+
+  const tone = nudge.tone || 'blue';
+  const toneColor = `var(--${tone})`;
+  const toneBg = `var(--${tone}-soft)`;
+  const toneLine = `var(--${tone}-line)`;
+
+  if (variant === 'pill') {
+    return (
+      <div style={{
+        display: 'inline-flex', alignItems: 'center', gap: 8,
+        padding: '6px 10px 6px 8px',
+        background: toneBg,
+        border: `1px solid ${toneLine}`,
+        borderRadius: 999,
+        animation: 'fadeUp 300ms var(--ease) both',
+        maxWidth: 420,
+      }}>
+        <span style={{
+          width: 6, height: 6, borderRadius: '50%', background: toneColor,
+          animation: 'pulseDot 1.6s ease-in-out infinite', flexShrink: 0,
+        }} />
+        <span style={{ fontSize: 12, color: 'var(--ink-0)', fontWeight: 500 }}>{nudge.title}</span>
+        {nudge.action && (
+          <button onClick={() => setPhraseOpen(p => !p)} style={{
+            border: 'none', background: 'transparent', color: toneColor,
+            fontSize: 11, fontWeight: 500, cursor: 'pointer', padding: 0,
+          }}>{nudge.action.label} →</button>
+        )}
+        <button onClick={() => onDismiss?.(nudge.id)} style={{
+          border: 'none', background: 'transparent', color: 'var(--ink-2)',
+          cursor: 'pointer', padding: 0, display: 'grid', placeItems: 'center',
+        }}>{I('x', { size: 11 })}</button>
+      </div>
+    );
+  }
+
+  if (variant === 'inline') {
+    return (
+      <div style={{
+        display: 'flex', gap: 10,
+        padding: '10px 12px',
+        borderLeft: `2px solid ${toneColor}`,
+        background: toneBg,
+        animation: 'fadeUp 300ms var(--ease) both',
+      }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+            <span className="eyebrow" style={{ color: toneColor }}>{nudge.type}</span>
+            <Confidence level={nudge.confidence} />
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{nudge.title}</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-1)' }}>{nudge.detail}</div>
+          {nudge.action && (
+            <button onClick={() => setPhraseOpen(p => !p)} style={{
+              marginTop: 6, border: 'none', background: 'transparent',
+              color: toneColor, fontSize: 11, fontWeight: 500,
+              cursor: 'pointer', padding: 0,
+            }}>{nudge.action.label} →</button>
+          )}
+          {phraseOpen && nudge.action?.phrase && (
+            <div style={{
+              marginTop: 6, padding: '8px 10px',
+              background: 'var(--bg-2)', border: '1px solid var(--line)',
+              borderRadius: 6, fontStyle: 'italic', fontSize: 12, color: 'var(--ink-0)',
+            }}>{nudge.action.phrase}</div>
+          )}
+        </div>
+        <button onClick={() => onDismiss?.(nudge.id)} style={{
+          border: 'none', background: 'transparent', color: 'var(--ink-2)',
+          cursor: 'pointer', padding: 0, alignSelf: 'flex-start',
+        }}>{I('x', { size: 12 })}</button>
+      </div>
+    );
+  }
+
+  // card (default)
+  return (
+    <div style={{
+      background: 'var(--bg-2)',
+      border: `1px solid ${toneLine}`,
+      borderRadius: 'var(--radius)',
+      overflow: 'hidden',
+      animation: 'fadeUp 320ms var(--ease) both',
+      boxShadow: 'var(--shadow-card)',
+      position: 'relative',
+    }}>
+      <div style={{
+        position: 'absolute', left: 0, top: 0, bottom: 0, width: 3,
+        background: toneColor,
+      }} />
+      <div style={{ padding: '11px 13px 11px 14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <span style={{
+            width: 7, height: 7, borderRadius: '50%', background: toneColor,
+            animation: nudge.positive ? 'none' : 'pulseDot 1.6s ease-in-out infinite',
+          }} />
+          <span className="eyebrow" style={{ color: toneColor }}>{nudge.type}</span>
+          <div style={{ flex: 1 }} />
+          <Confidence level={nudge.confidence} />
+          <span className="mono" style={{ fontSize: 10, color: 'var(--ink-2)' }}>
+            {Math.round(nudge.confidence * 100)}%
+          </span>
+        </div>
+        <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.35, marginBottom: 4, letterSpacing: '-0.01em' }}>
+          {nudge.title}
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink-1)', lineHeight: 1.45 }}>
+          {nudge.detail}
+        </div>
+
+        {/* Signals (explainability) */}
+        {!compact && nudge.signals && (
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 8 }}>
+            {nudge.signals.map((s, i) => (
+              <span key={i} style={{
+                fontSize: 10.5, color: 'var(--ink-2)',
+                padding: '2px 6px', background: 'var(--bg-inset)',
+                border: '1px solid var(--line-soft)', borderRadius: 4,
+                fontFamily: 'var(--font-mono)',
+              }}>{s}</span>
+            ))}
+          </div>
+        )}
+
+        {/* Why this nudge — counterfactual explainer */}
+        {!compact && nudge.why && (
+          <div style={{
+            marginTop: 8,
+            padding: '7px 9px',
+            background: 'transparent',
+            borderLeft: `1.5px solid ${toneLine}`,
+            fontSize: 11.5, color: 'var(--ink-2)', lineHeight: 1.45,
+          }}>
+            <span className="eyebrow" style={{ marginRight: 6, color: toneColor }}>Why</span>
+            {nudge.why}
+          </div>
+        )}
+
+        {/* Phrase reveal */}
+        {phraseOpen && nudge.action?.phrase && (
+          <div style={{
+            marginTop: 8, padding: '9px 11px',
+            background: 'var(--bg-inset)',
+            border: '1px solid var(--line)',
+            borderRadius: 6,
+            fontSize: 12.5, color: 'var(--ink-0)',
+            fontStyle: 'italic',
+            animation: 'fadeUp 200ms var(--ease) both',
+          }}>
+            <div className="eyebrow" style={{ marginBottom: 3, fontStyle: 'normal' }}>Say it like</div>
+            {nudge.action.phrase}
+          </div>
+        )}
+
+        {/* Actions */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line-soft)',
+        }}>
+          {nudge.action && (
+            <button onClick={() => setPhraseOpen(p => !p)} style={{
+              border: `1px solid ${toneLine}`,
+              background: toneBg, color: toneColor,
+              fontSize: 11.5, fontWeight: 500,
+              padding: '4px 10px', borderRadius: 5,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+              transition: 'all var(--speed) var(--ease)',
+            }}>
+              {I('sparkle', { size: 11 })}
+              {phraseOpen ? 'Hide' : nudge.action.label}
+            </button>
+          )}
+          <div style={{ flex: 1 }} />
+          <button onClick={() => onSnooze?.(nudge.id)} style={{
+            border: 'none', background: 'transparent', color: 'var(--ink-2)',
+            fontSize: 11, cursor: 'pointer', padding: '3px 6px', borderRadius: 4,
+            display: 'flex', alignItems: 'center', gap: 4,
+          }} title="Snooze 2m">
+            {I('snooze', { size: 12 })} Snooze
+          </button>
+          <button onClick={() => onDismiss?.(nudge.id)} style={{
+            border: 'none', background: 'transparent', color: 'var(--ink-2)',
+            fontSize: 11, cursor: 'pointer', padding: '3px 6px', borderRadius: 4,
+            display: 'flex', alignItems: 'center', gap: 4,
+          }} title="Dismiss">
+            {I('x', { size: 12 })} Dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+window.Nudge = Nudge;
+
+
+// === components/LiveDashboard.jsx ===
+// LiveDashboard.jsx — the main screen
+
+function Transcript({ transcript, participants, t }) {
+  const scrollRef = React.useRef();
+  React.useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [transcript.length]);
+
+  const p = (id) => participants.find(x => x.id === id);
+  const last = transcript[transcript.length - 1];
+  const currentSpeaker = last ? p(last.s) : null;
+
+  return (
+    <div ref={scrollRef} className="scroll" style={{
+      flex: 1, overflowY: 'auto',
+      padding: '8px 16px 16px', minHeight: 0,
+    }}>
+      {transcript.map((l, i) => {
+        const prev = transcript[i-1];
+        const showSpeaker = !prev || prev.s !== l.s;
+        const speaker = p(l.s);
+        const isYou = l.s === 'you';
+        const isCurrent = i === transcript.length - 1;
+        return (
+          <div key={i} style={{
+            marginTop: showSpeaker ? 12 : 2,
+            animation: isCurrent ? 'fadeUp 280ms var(--ease) both' : 'none',
+          }}>
+            {showSpeaker && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+                <span style={{
+                  width: 18, height: 18, borderRadius: 4,
+                  background: speaker.color, opacity: 0.25,
+                  border: `1px solid ${speaker.color}`,
+                  display: 'grid', placeItems: 'center',
+                  fontSize: 9, fontWeight: 600, color: speaker.color,
+                  fontFamily: 'var(--font-mono)',
+                }}>{speaker.initials}</span>
+                <span style={{
+                  fontSize: 11.5, fontWeight: 600, color: isYou ? 'var(--ink-0)' : 'var(--ink-1)',
+                }}>{speaker.name}</span>
+                <span className="mono" style={{ fontSize: 10, color: 'var(--ink-3)' }}>
+                  {MeetingData.fmtTime(l.t)}
+                </span>
+                {l.interrupted && (
+                  <Chip tone="rose" size="sm">interrupted</Chip>
+                )}
+              </div>
+            )}
+            <div style={{
+              fontSize: 13, lineHeight: 1.55,
+              color: isYou ? 'var(--ink-0)' : 'var(--ink-1)',
+              paddingLeft: 25,
+              textWrap: 'pretty',
+            }}>
+              {l.txt}
+              {isCurrent && <TypingCaret />}
+            </div>
+          </div>
+        );
+      })}
+      {transcript.length === 0 && (
+        <div style={{ padding: 20, textAlign: 'center', color: 'var(--ink-3)', fontSize: 12 }}>
+          Waiting for audio…
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TypingCaret() {
+  return (
+    <span style={{
+      display: 'inline-block', width: 2, height: '1em',
+      background: 'currentColor', marginLeft: 2,
+      verticalAlign: 'text-bottom',
+      animation: 'breathe 1.2s ease-in-out infinite',
+    }} />
+  );
+}
+
+function LevelBars({ active = true, count = 5, color = 'var(--rose)' }) {
+  return (
+    <div style={{ display: 'inline-flex', gap: 2, alignItems: 'center', height: 12 }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <span key={i} style={{
+          width: 2, height: 10, background: color, borderRadius: 1,
+          transformOrigin: 'center',
+          animation: active ? `levelBar ${0.6 + i * 0.13}s ease-in-out infinite` : 'none',
+          opacity: active ? 1 : 0.3,
+          animationDelay: `${i * 0.08}s`,
+        }}/>
+      ))}
+    </div>
+  );
+}
+
+function TalkRatioBar({ participants }) {
+  return (
+    <div>
+      <div style={{
+        display: 'flex', height: 22, borderRadius: 5, overflow: 'hidden',
+        border: '1px solid var(--line)', background: 'var(--bg-inset)',
+      }}>
+        {participants.map(p => p.pct > 0 && (
+          <div key={p.id} style={{
+            width: `${p.pct}%`, background: p.color, opacity: 0.75,
+            transition: 'width 600ms var(--ease)',
+            display: 'grid', placeItems: 'center',
+            fontSize: 10, color: 'var(--bg-0)', fontWeight: 600,
+            minWidth: p.pct > 6 ? 20 : 0,
+            fontFamily: 'var(--font-mono)',
+          }}>{p.pct > 8 ? `${p.pct}%` : ''}</div>
+        ))}
+      </div>
+      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {participants.map(p => (
+          <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: p.color }} />
+            <span style={{ flex: 1, color: p.id === 'you' ? 'var(--ink-0)' : 'var(--ink-1)' }}>
+              {p.name}
+            </span>
+            <span className="mono" style={{ color: 'var(--ink-2)' }}>
+              {Math.floor(p.seconds)}s
+            </span>
+            <span className="mono" style={{
+              color: p.id === 'you' && p.pct > 60 ? 'var(--amber)' : 'var(--ink-1)',
+              width: 28, textAlign: 'right', fontWeight: 500,
+            }}>{p.pct}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SentimentGauge({ value }) {
+  // value 0 (tense) to 1 (calm)
+  const label = value > 0.7 ? 'Calm' : value > 0.5 ? 'Neutral' : value > 0.3 ? 'Focused' : 'Tense';
+  const color = value > 0.6 ? 'var(--green)' : value > 0.4 ? 'var(--blue)' : value > 0.25 ? 'var(--amber)' : 'var(--rose)';
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--ink-2)', marginBottom: 6, fontFamily: 'var(--font-mono)' }}>
+        <span>Tense</span><span>Calm</span>
+      </div>
+      <div style={{
+        position: 'relative', height: 6, borderRadius: 3,
+        background: 'linear-gradient(to right, var(--rose-soft), var(--amber-soft), var(--blue-soft), var(--green-soft))',
+        border: '1px solid var(--line-soft)',
+      }}>
+        <div style={{
+          position: 'absolute', top: -3, left: `${value * 100}%`,
+          transform: 'translateX(-50%)',
+          width: 10, height: 10, borderRadius: '50%',
+          background: color, border: '2px solid var(--bg-1)',
+          boxShadow: '0 0 0 1px ' + color,
+          transition: 'left 600ms var(--ease), background 600ms var(--ease)',
+        }}/>
+      </div>
+      <div style={{ marginTop: 6, fontSize: 12, color, fontWeight: 500 }}>{label}</div>
+    </div>
+  );
+}
+
+function MetricTile({ label, value, suffix, trend, hint, color = 'var(--ink-0)' }) {
+  return (
+    <div style={{
+      padding: '10px 12px',
+      background: 'var(--bg-2)',
+      border: '1px solid var(--line-soft)',
+      borderRadius: 8,
+    }}>
+      <div className="eyebrow" style={{ marginBottom: 4 }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+        <span className="mono" style={{ fontSize: 20, fontWeight: 600, color, letterSpacing: '-0.02em' }}>
+          {value}
+        </span>
+        {suffix && <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{suffix}</span>}
+      </div>
+      {hint && <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 2 }}>{hint}</div>}
+    </div>
+  );
+}
+
+function GuidanceStream({ active, history, onDismiss, onSnooze, variant, muted }) {
+  if (muted) {
+    return (
+      <div style={{
+        flex: 1, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        padding: 30, color: 'var(--ink-2)', textAlign: 'center', gap: 10,
+      }}>
+        <div style={{ opacity: 0.5 }}>{I('bellOff', { size: 22 })}</div>
+        <div style={{ fontSize: 13, color: 'var(--ink-1)', fontWeight: 500 }}>Coaching muted</div>
+        <div style={{ fontSize: 12, maxWidth: 240 }}>
+          Still recording & analyzing. Review insights after the meeting.
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      {/* Active region */}
+      <div style={{
+        padding: '14px 14px 10px',
+        flexShrink: 0,
+        minHeight: active.length ? 0 : 100,
+      }}>
+        {active.length === 0 ? (
+          <div style={{
+            padding: '20px 14px',
+            background: 'var(--bg-inset)',
+            border: '1px dashed var(--line)',
+            borderRadius: 'var(--radius)',
+            textAlign: 'center',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+          }}>
+            <div style={{
+              width: 26, height: 26, borderRadius: '50%',
+              background: 'var(--bg-2)', border: '1px solid var(--line)',
+              display: 'grid', placeItems: 'center',
+              color: 'var(--ink-2)',
+              animation: 'breathe 2.4s ease-in-out infinite',
+            }}>{I('pulse', { size: 13 })}</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-1)', fontWeight: 500 }}>Listening</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>No active cues</div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {active.map(n => (
+              <Nudge key={n.id} nudge={n} onDismiss={onDismiss} onSnooze={onSnooze} variant={variant}/>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* History */}
+      <div style={{
+        padding: '10px 14px 4px',
+        borderTop: '1px solid var(--line-soft)',
+        display: 'flex', alignItems: 'center', gap: 8,
+        flexShrink: 0,
+      }}>
+        <span className="eyebrow">History</span>
+        <span className="mono" style={{ fontSize: 10, color: 'var(--ink-3)' }}>
+          {history.length} in this meeting
+        </span>
+      </div>
+      <div className="scroll" style={{
+        flex: 1, overflowY: 'auto', padding: '4px 14px 14px',
+        display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0,
+      }}>
+        {history.filter(n => !active.find(a => a.id === n.id)).map(n => (
+          <HistoryItem key={n.id} nudge={n} />
+        ))}
+        {history.length === 0 && (
+          <div style={{ fontSize: 11, color: 'var(--ink-3)', padding: '8px 0' }}>
+            Dismissed and completed cues will appear here.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HistoryItem({ nudge }) {
+  const tone = nudge.tone;
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'flex-start', gap: 8,
+      padding: '6px 8px', borderRadius: 6,
+      transition: 'background var(--speed)',
+    }}>
+      <span style={{
+        width: 5, height: 5, borderRadius: '50%',
+        background: `var(--${tone})`, marginTop: 7, flexShrink: 0, opacity: 0.6,
+      }}/>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 11.5, color: 'var(--ink-1)', lineHeight: 1.35 }}>{nudge.title}</div>
+      </div>
+      <span className="mono" style={{ fontSize: 10, color: 'var(--ink-3)' }}>
+        {MeetingData.fmtTime(nudge.t)}
+      </span>
+    </div>
+  );
+}
+
+// High-alert edge pulse — ambient peripheral cue
+function HighAlertFrame({ active }) {
+  return (
+    <div style={{
+      position: 'absolute', inset: 0,
+      pointerEvents: 'none',
+      boxShadow: active ? 'inset 0 0 0 2px var(--rose), inset 0 0 40px 0 oklch(0.7 0.18 18 / 0.15)' : 'none',
+      transition: 'box-shadow 400ms var(--ease)',
+      animation: active ? 'pulseEdge 2s ease-in-out infinite' : 'none',
+      borderRadius: 'inherit', zIndex: 5,
+    }}/>
+  );
+}
+
+function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant, speed, onSpeed }) {
+  const highAlert = sim.activeNudges.some(n => n.tone === 'rose');
+
+  return (
+    <div style={{
+      flex: 1, display: 'grid',
+      gridTemplateColumns: '1.2fr 1.4fr 1fr',
+      gap: 14, padding: 14, minHeight: 0, position: 'relative',
+    }}>
+      <HighAlertFrame active={highAlert && !muted} />
+
+      {/* LEFT — Transcript */}
+      <Panel
+        eyebrow="Transcript"
+        title="Live"
+        dense
+        right={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {running ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <LevelBars active />
+                <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>
+                  {sim.participants.find(p => p.id === sim.transcript[sim.transcript.length-1]?.s)?.name || '—'}
+                </span>
+              </div>
+            ) : (
+              <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-3)' }}>Paused</span>
+            )}
+          </div>
+        }
+      >
+        <Transcript transcript={sim.transcript} participants={sim.participants} t={sim.t}/>
+      </Panel>
+
+      {/* CENTER — Guidance */}
+      <Panel
+        eyebrow="Guidance"
+        title="Stream"
+        dense
+        right={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <IconButton tip={running ? 'Pause (Space)' : 'Resume (Space)'} onClick={onToggleRun}>
+              {running ? I('pause', { size: 12 }) : I('play', { size: 12 })}
+            </IconButton>
+            <button onClick={() => onSpeed(speed === 1 ? 2 : speed === 2 ? 4 : 1)}
+              className="mono"
+              style={{
+                border: '1px solid var(--line)', background: 'var(--bg-inset)',
+                color: 'var(--ink-1)', fontSize: 10.5, padding: '3px 6px',
+                borderRadius: 5, cursor: 'pointer', minWidth: 28,
+              }}>{speed}×</button>
+            <IconButton tip="Mute coaching (⌘M)" onClick={onToggleMute} active={muted} danger={muted}>
+              {muted ? I('bellOff', { size: 12 }) : I('bell', { size: 12 })}
+            </IconButton>
+          </div>
+        }
+      >
+        <GuidanceStream
+          active={sim.activeNudges}
+          history={sim.nudgeHistory}
+          onDismiss={sim.dismissNudge}
+          onSnooze={sim.dismissNudge}
+          variant={variant}
+          muted={muted}
+        />
+      </Panel>
+
+      {/* RIGHT — Dynamics */}
+      <Panel eyebrow="Dynamics" title="Live" dense
+        right={sim.metrics.audioQuality < 0.6 ? (
+          <span style={{
+            fontSize: 10.5, padding: '3px 7px',
+            background: 'var(--bg-inset)', border: '1px dashed var(--line)',
+            borderRadius: 999, color: 'var(--ink-2)',
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+          }}>
+            <span style={{ width:5, height:5, borderRadius:'50%', background:'var(--amber)' }}/>
+            low audio
+          </span>
+        ) : null}
+      >
+        <div className="scroll" style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 14, minHeight: 0 }}>
+          {/* Talk time */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+              <span className="eyebrow">Speaking time</span>
+              <div style={{ flex: 1 }}/>
+              {sim.metrics.yourTalkPct > 60 && (
+                <Chip tone="amber" size="sm">above balance</Chip>
+              )}
+            </div>
+            <TalkRatioBar participants={sim.metrics.talkRatio}/>
+          </div>
+
+          {/* Tone */}
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>Tone</div>
+            <SentimentGauge value={sim.metrics.sentiment}/>
+          </div>
+
+          {/* LSM + IPA equilibrium — 2-up */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={{
+              padding: '10px 11px', background: 'var(--bg-2)',
+              border: '1px solid var(--line-soft)', borderRadius: 8,
+            }}>
+              <div className="eyebrow" style={{ marginBottom: 4 }}>LSM</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                <span className="mono" style={{ fontSize: 18, fontWeight: 600,
+                  color: sim.metrics.lsm < 0.55 ? 'var(--rose)' : sim.metrics.lsm > 0.75 ? 'var(--green)' : 'var(--ink-0)',
+                  letterSpacing:'-0.02em',
+                }}>{sim.metrics.lsm.toFixed(2)}</span>
+              </div>
+              <div style={{ marginTop: 6 }}>
+                <Meter value={sim.metrics.lsm * 100} color={sim.metrics.lsm < 0.55 ? 'var(--rose)' : 'var(--blue)'} height={3}/>
+              </div>
+              <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 5 }}>
+                {sim.metrics.lsm < 0.55 ? 'misaligned' : sim.metrics.lsm > 0.75 ? 'synced' : 'matching'}
+              </div>
+            </div>
+            <div style={{
+              padding: '10px 11px', background: 'var(--bg-2)',
+              border: '1px solid var(--line-soft)', borderRadius: 8,
+            }}>
+              <div className="eyebrow" style={{ marginBottom: 4 }}>IPA balance</div>
+              <IPABalance taskRatio={sim.metrics.ipaTaskRatio}/>
+              <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 5 }}>
+                {sim.metrics.ipaDeviation > 0.2 ? 'task-heavy' : 'healthy'}
+              </div>
+            </div>
+          </div>
+
+          {/* Interruption matrix */}
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>Interruption matrix</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              <InterruptCell
+                label="you → others"
+                value={sim.metrics.youInterruptedOthers}
+                tone={sim.metrics.youInterruptedOthers > 0 ? 'rose' : 'neutral'}
+              />
+              <InterruptCell
+                label="others → you"
+                value={sim.metrics.othersInterruptedYou}
+                tone="neutral"
+              />
+            </div>
+          </div>
+
+          {/* Silence / dead-air tracker */}
+          <div>
+            <div style={{ display:'flex', alignItems:'center', marginBottom: 6 }}>
+              <span className="eyebrow">Silence</span>
+              <div style={{flex:1}}/>
+              <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>
+                {sim.metrics.silenceContext}
+              </span>
+            </div>
+            <SilenceBar gap={sim.metrics.silenceGap} context={sim.metrics.silenceContext}/>
+          </div>
+
+          {/* Engagement + Pace tiles */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <MetricTile
+              label="Engagement"
+              value={Math.round(sim.metrics.engagement * 100)}
+              suffix="/100"
+              hint="3 speakers · active"
+              color={sim.metrics.engagement > 0.6 ? 'var(--green)' : 'var(--ink-0)'}
+            />
+            <MetricTile
+              label="Pace"
+              value={Math.round(142 + sim.metrics.tension * 26)}
+              suffix="wpm"
+              hint="baseline 142"
+              color={sim.metrics.tension > 0.5 ? 'var(--amber)' : 'var(--ink-0)'}
+            />
+          </div>
+
+          {/* Meeting goals */}
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>Meeting goals</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <GoalRow label="Speak less than 50%" current={sim.metrics.yourTalkPct} target={50} invert/>
+              <GoalRow label="Ask ≥ 3 questions" current={Math.floor(sim.t / 60)} target={3}/>
+              <GoalRow label="Acknowledge objections" current={sim.t > 102 ? 1 : 0} target={2}/>
+            </div>
+          </div>
+
+          {/* Low audio quality — graceful degradation */}
+          {sim.metrics.audioQuality < 0.6 && (
+            <div style={{
+              padding: '9px 11px', background: 'var(--bg-inset)',
+              border: '1px dashed var(--amber-line)', borderRadius: 6,
+              display: 'flex', gap: 8, alignItems: 'flex-start',
+            }}>
+              <span style={{ color: 'var(--amber)', marginTop: 1 }}>{I('info', { size: 12 })}</span>
+              <div style={{ fontSize: 11, color: 'var(--ink-1)', lineHeight: 1.4 }}>
+                <div style={{ fontWeight: 600, color: 'var(--ink-0)', marginBottom: 2 }}>Coaching paused</div>
+                Low audio quality — multi-speaker overlap detected. Cues will resume once signal stabilizes.
+              </div>
+            </div>
+          )}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function GoalRow({ label, current, target, invert = false }) {
+  const ratio = invert
+    ? Math.max(0, 1 - current / target)
+    : Math.min(1, current / target);
+  const done = invert ? current <= target : current >= target;
+  return (
+    <div>
+      <div style={{ display: 'flex', fontSize: 11.5, marginBottom: 3 }}>
+        <span style={{ flex: 1, color: 'var(--ink-1)' }}>{label}</span>
+        <span className="mono" style={{ color: done ? 'var(--green)' : 'var(--ink-2)' }}>
+          {current}{invert ? '%' : ''} / {target}{invert ? '%' : ''}
+        </span>
+      </div>
+      <Meter value={ratio * 100} color={done ? 'var(--green)' : 'var(--blue)'} height={3}/>
+    </div>
+  );
+}
+
+// Small visual for Bales' IPA task vs socio-emotional balance
+function IPABalance({ taskRatio }) {
+  const task = Math.round(taskRatio * 100);
+  const socio = 100 - task;
+  const target = 65; // healthy task share
+  const dev = Math.abs(task - target);
+  const off = dev > 20;
+  return (
+    <div>
+      <div style={{
+        position: 'relative', height: 8, borderRadius: 4, overflow: 'hidden',
+        background: 'var(--bg-inset)', border: '1px solid var(--line-soft)',
+      }}>
+        <div style={{
+          position: 'absolute', inset: 0, width: task + '%',
+          background: off ? 'var(--amber)' : 'var(--blue)',
+          transition: 'width 400ms var(--ease)',
+        }}/>
+        {/* target marker */}
+        <div style={{
+          position: 'absolute', top: -2, bottom: -2, left: target + '%',
+          width: 1, background: 'var(--ink-1)', opacity: 0.35,
+        }}/>
+      </div>
+      <div style={{ display: 'flex', marginTop: 4, fontSize: 10, color: 'var(--ink-2)' }} className="mono">
+        <span>task {task}%</span>
+        <div style={{ flex: 1 }}/>
+        <span>socio {socio}%</span>
+      </div>
+    </div>
+  );
+}
+
+function InterruptCell({ label, value, tone }) {
+  const color = tone === 'rose' ? 'var(--rose)' : 'var(--ink-0)';
+  return (
+    <div style={{
+      padding: '8px 10px', background: 'var(--bg-2)',
+      border: '1px solid var(--line-soft)', borderRadius: 7,
+    }}>
+      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginBottom: 2, fontFamily: 'var(--font-mono)' }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+        <span className="mono" style={{
+          fontSize: 18, fontWeight: 600, color, letterSpacing: '-0.02em',
+        }}>{value}</span>
+        <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{value === 1 ? 'event' : 'events'}</span>
+      </div>
+    </div>
+  );
+}
+
+function SilenceBar({ gap, context }) {
+  // 0–6s visual; color by context
+  const pct = Math.min(100, (gap / 6) * 100);
+  const color =
+    context === 'dead-air' ? 'var(--amber)' :
+    context === 'stalled'  ? 'var(--amber)' :
+    context === 'thinking' ? 'var(--blue)' :
+    context === 'pause'    ? 'var(--ink-2)' :
+                             'var(--ink-3)';
+  return (
+    <div>
+      <div style={{
+        position: 'relative', height: 6, borderRadius: 3, overflow: 'hidden',
+        background: 'var(--bg-inset)', border: '1px solid var(--line-soft)',
+      }}>
+        <div style={{
+          position: 'absolute', inset: 0, width: pct + '%', background: color,
+          transition: 'width 300ms var(--ease), background 300ms var(--ease)',
+        }}/>
+      </div>
+      <div style={{ display: 'flex', marginTop: 4, fontSize: 10, color: 'var(--ink-2)' }} className="mono">
+        <span>{gap.toFixed(1)}s</span>
+        <div style={{ flex: 1 }}/>
+        <span>dead-air &gt; 4s</span>
+      </div>
+    </div>
+  );
+}
+
+window.LiveDashboard = LiveDashboard;
+
+
+// === components/CompactOverlay.jsx ===
+// CompactOverlay.jsx — floating widget for screen-share use
+function CompactOverlay({ sim, running, onExpand, muted, onToggleMute }) {
+  const top = sim.activeNudges[0];
+  const tone = top?.tone || 'blue';
+
+  return (
+    <div style={{
+      flex: 1, display: 'grid', placeItems: 'center',
+      background: `
+        radial-gradient(circle at 30% 30%, oklch(0.25 0.02 260 / 0.6), transparent 60%),
+        radial-gradient(circle at 70% 70%, oklch(0.22 0.02 250 / 0.5), transparent 60%),
+        var(--bg-0)
+      `,
+      position: 'relative',
+      padding: 30,
+    }}>
+      {/* Fake screen-share stage */}
+      <div style={{
+        position: 'absolute', inset: 30,
+        border: '1px dashed var(--line)', borderRadius: 12,
+        display: 'grid', placeItems: 'center',
+        color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', fontSize: 11,
+        background: 'repeating-linear-gradient(45deg, transparent, transparent 8px, var(--line-soft) 8px, var(--line-soft) 9px)',
+      }}>
+        <div style={{ background: 'var(--bg-0)', padding: '6px 12px', borderRadius: 4 }}>
+          your shared screen
+        </div>
+      </div>
+
+      {/* Compact floating widget */}
+      <div style={{
+        position: 'absolute', bottom: 60, right: 60,
+        width: 320,
+        background: 'oklch(0.17 0.008 260 / 0.88)',
+        backdropFilter: 'blur(16px) saturate(140%)',
+        WebkitBackdropFilter: 'blur(16px) saturate(140%)',
+        border: '1px solid var(--line-strong)',
+        borderRadius: 14,
+        boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+        overflow: 'hidden',
+        animation: 'fadeUp 400ms var(--ease) both',
+      }}>
+        {/* Header strip */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 10px',
+          borderBottom: '1px solid var(--line-soft)',
+        }}>
+          <BrandMark size={14}/>
+          <span style={{ fontSize: 11, fontWeight: 600 }}>Talksmith</span>
+          <div style={{ flex: 1 }}/>
+          {running && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{
+                width: 5, height: 5, borderRadius: '50%', background: 'var(--rose)',
+                animation: 'pulseDot 1.4s ease-in-out infinite',
+              }}/>
+              <span className="mono" style={{ fontSize: 10, color: 'var(--ink-1)' }}>{sim.tc}</span>
+            </div>
+          )}
+          <IconButton size={22} tip="Mute" onClick={onToggleMute} danger={muted}>
+            {muted ? I('bellOff', { size: 11 }) : I('bell', { size: 11 })}
+          </IconButton>
+          <IconButton size={22} tip="Expand (⌘E)" onClick={onExpand}>
+            {I('expand', { size: 11 })}
+          </IconButton>
+        </div>
+
+        {/* Top nudge region */}
+        <div style={{ padding: 12 }}>
+          {top ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <span style={{
+                  width: 6, height: 6, borderRadius: '50%', background: `var(--${tone})`,
+                  animation: 'pulseDot 1.6s ease-in-out infinite',
+                }}/>
+                <span className="eyebrow" style={{ color: `var(--${tone})` }}>{top.type}</span>
+                <div style={{ flex: 1 }}/>
+                <Confidence level={top.confidence}/>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.35, marginBottom: 3 }}>
+                {top.title}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-1)', lineHeight: 1.45 }}>
+                {top.detail}
+              </div>
+              {top.action && (
+                <div style={{
+                  marginTop: 8, padding: '7px 9px',
+                  background: 'var(--bg-inset)', border: '1px solid var(--line-soft)',
+                  borderRadius: 5, fontSize: 11.5, fontStyle: 'italic', color: 'var(--ink-0)',
+                }}>
+                  “{top.action.phrase.replace(/^"|"$/g, '')}”
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{
+                width: 6, height: 6, borderRadius: '50%', background: 'var(--ink-2)',
+                animation: 'breathe 2s ease-in-out infinite',
+              }}/>
+              <span style={{ fontSize: 12, color: 'var(--ink-1)' }}>Listening — no cues</span>
+            </div>
+          )}
+        </div>
+
+        {/* Micro-stats strip */}
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
+          borderTop: '1px solid var(--line-soft)',
+          background: 'var(--bg-inset)',
+        }}>
+          <MicroStat label="Talk" value={`${sim.metrics.yourTalkPct}%`} alert={sim.metrics.yourTalkPct > 60}/>
+          <MicroStat label="Tone" value={sim.metrics.sentiment > 0.5 ? 'Calm' : 'Tense'} alert={sim.metrics.sentiment < 0.35}/>
+          <MicroStat label="Int." value={sim.metrics.interruptions} alert={sim.metrics.interruptions > 1} last/>
+        </div>
+
+        {/* Secondary nudge preview */}
+        {sim.activeNudges[1] && (
+          <div style={{
+            padding: '8px 12px',
+            borderTop: '1px solid var(--line-soft)',
+            display: 'flex', alignItems: 'center', gap: 8,
+            fontSize: 11, color: 'var(--ink-1)',
+          }}>
+            <span style={{
+              width: 5, height: 5, borderRadius: '50%',
+              background: `var(--${sim.activeNudges[1].tone})`, opacity: 0.7,
+            }}/>
+            <span style={{ flex: 1 }}>{sim.activeNudges[1].title}</span>
+          </div>
+        )}
+
+        {/* Shortcut footer */}
+        <div style={{
+          padding: '6px 10px',
+          borderTop: '1px solid var(--line-soft)',
+          display: 'flex', gap: 10, alignItems: 'center',
+          background: 'oklch(0.14 0.005 260 / 0.5)',
+        }}>
+          <span style={{ fontSize: 10, color: 'var(--ink-3)', display: 'flex', gap: 4, alignItems: 'center' }}>
+            <Kbd>␣</Kbd> dismiss
+          </span>
+          <span style={{ fontSize: 10, color: 'var(--ink-3)', display: 'flex', gap: 4, alignItems: 'center' }}>
+            <Kbd>S</Kbd> snooze
+          </span>
+          <span style={{ fontSize: 10, color: 'var(--ink-3)', display: 'flex', gap: 4, alignItems: 'center' }}>
+            <Kbd>⌘E</Kbd> expand
+          </span>
+        </div>
+      </div>
+
+      {/* Peripheral indicator — top-right edge */}
+      <div style={{
+        position: 'absolute', top: 30, right: 30,
+        display: 'flex', alignItems: 'center', gap: 6,
+        padding: '4px 8px', borderRadius: 12,
+        background: 'oklch(0.17 0.008 260 / 0.85)',
+        border: '1px solid var(--line-soft)',
+        backdropFilter: 'blur(10px)',
+      }}>
+        <LevelBars active={running} count={4} color="var(--ink-1)"/>
+        <span className="mono" style={{ fontSize: 10, color: 'var(--ink-2)' }}>
+          {running ? 'REC' : 'PAUSED'} · {sim.tc}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function MicroStat({ label, value, alert, last }) {
+  return (
+    <div style={{
+      padding: '7px 10px',
+      borderRight: last ? 'none' : '1px solid var(--line-soft)',
+    }}>
+      <div className="eyebrow" style={{ fontSize: 9, marginBottom: 1 }}>{label}</div>
+      <div className="mono" style={{
+        fontSize: 13, fontWeight: 600,
+        color: alert ? 'var(--amber)' : 'var(--ink-0)',
+        letterSpacing: '-0.02em',
+      }}>{value}</div>
+    </div>
+  );
+}
+
+window.CompactOverlay = CompactOverlay;
+
+
+// === components/Review.jsx ===
+// Review.jsx — Post-meeting review screen
+// Timeline scrub + synced transcript/insights + suggestions + scores
+
+function Review({ playing, onTogglePlay, t, setT, sim }) {
+  const total = sim.totalDuration;
+  const events = sim.timelineEvents;
+
+  // Playback tick
+  React.useEffect(() => {
+    if (!playing) return;
+    const iv = setInterval(() => {
+      setT(prev => prev + 0.1 > total ? 0 : prev + 0.1);
+    }, 100);
+    return () => clearInterval(iv);
+  }, [playing, total]);
+
+  // Nudges up to current time for the insight column
+  const insightsUpTo = MeetingData.NUDGE_SCRIPT.filter(n => n.t <= t);
+  const currentInsight = insightsUpTo[insightsUpTo.length - 1];
+
+  return (
+    <div style={{
+      flex: 1, display: 'grid',
+      gridTemplateColumns: '1.1fr 1.2fr 1.1fr',
+      gridTemplateRows: 'auto 1fr',
+      gap: 14, padding: 14, minHeight: 0,
+    }}>
+      {/* Top bar: scores */}
+      <div style={{ gridColumn: '1 / -1' }}>
+        <ScoreBar metrics={deriveFinalScores(sim)}/>
+      </div>
+
+      {/* LEFT — Transcript synced */}
+      <Panel eyebrow="Recording" title="Synced transcript" dense
+        right={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <IconButton size={26} tip={playing ? 'Pause' : 'Play'} onClick={onTogglePlay}>
+              {playing ? I('pause', { size: 11 }) : I('play', { size: 11 })}
+            </IconButton>
+            <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>
+              {MeetingData.fmtTime(t)} / {MeetingData.fmtTime(total)}
+            </span>
+          </div>
+        }>
+        <SyncedTranscript t={t} setT={setT}/>
+      </Panel>
+
+      {/* CENTER — Timeline + Insight */}
+      <Panel eyebrow="Key moments" title="Timeline" dense>
+        <Timeline events={events} total={total} t={t} setT={setT}/>
+        <div style={{ padding: '10px 14px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto' }} className="scroll">
+          {currentInsight ? (
+            <CurrentInsight nudge={currentInsight}/>
+          ) : (
+            <div style={{ padding: 20, color: 'var(--ink-2)', fontSize: 12, textAlign: 'center' }}>
+              Scrub to a flagged moment to see the coaching insight captured there.
+            </div>
+          )}
+
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>All moments</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {events.map((e, i) => (
+                <button key={i} onClick={() => setT(e.t)} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '7px 9px', borderRadius: 6,
+                  background: Math.abs(t - e.t) < 1 ? 'var(--bg-2)' : 'transparent',
+                  border: '1px solid transparent',
+                  borderColor: Math.abs(t - e.t) < 1 ? 'var(--line)' : 'transparent',
+                  color: 'var(--ink-1)', cursor: 'pointer', textAlign: 'left',
+                  width: '100%', fontFamily: 'inherit',
+                  transition: 'all var(--speed)',
+                }}>
+                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: `var(--${e.tone})` }}/>
+                  <span style={{ flex: 1, fontSize: 12 }}>{e.label}</span>
+                  <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-3)' }}>
+                    {MeetingData.fmtTime(e.t)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Panel>
+
+      {/* RIGHT — "What you could have said" */}
+      <Panel eyebrow="Coaching" title="What you could have said" dense>
+        <div className="scroll" style={{ flex: 1, overflowY: 'auto', padding: '10px 14px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {MeetingData.NUDGE_SCRIPT.filter(n => n.action).map(n => (
+            <CoachCard key={n.id} nudge={n} active={Math.abs(t - n.t) < 3} onJump={() => setT(n.t)}/>
+          ))}
+
+          <div style={{
+            marginTop: 6,
+            padding: 12,
+            background: 'var(--bg-inset)',
+            border: '1px solid var(--line-soft)',
+            borderRadius: 8,
+            display: 'flex', gap: 10,
+          }}>
+            <span style={{ color: 'var(--blue)', marginTop: 1 }}>{I('info', { size: 14 })}</span>
+            <div style={{ fontSize: 11.5, color: 'var(--ink-1)', lineHeight: 1.5 }}>
+              Talksmith's suggestions are generated by comparing your patterns to high-influence meetings
+              you've previously tagged as successful. Each is <b>explainable</b> — hover any score to see
+              the contributing signals.
+            </div>
+          </div>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function deriveFinalScores(sim) {
+  return {
+    talkRatio: 62,   // you
+    clarity: 78,
+    influence: 64,
+    listening: 54,
+    interruptions: 2,
+    duration: 175,
+  };
+}
+
+function ScoreBar({ metrics }) {
+  const scores = [
+    { k: 'Talk ratio', v: metrics.talkRatio, unit: '%', target: '<50', tone: metrics.talkRatio > 55 ? 'amber' : 'green', hint: 'You spoke 62% of the meeting vs. team avg 48%' },
+    { k: 'Clarity',     v: metrics.clarity, unit: '/100', target: '>75', tone: 'green', hint: 'Fewer filler words than last meeting (−18%)' },
+    { k: 'Influence',   v: metrics.influence, unit: '/100', target: '>70', tone: 'amber', hint: 'Your proposals led to 2/3 decisions adopted' },
+    { k: 'Listening',   v: metrics.listening, unit: '/100', target: '>70', tone: 'rose',  hint: 'Acknowledged only 1/3 objections raised' },
+  ];
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: 'repeat(4, 1fr) auto',
+      gap: 1, background: 'var(--line)',
+      border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)',
+      overflow: 'hidden',
+    }}>
+      {scores.map((s, i) => (
+        <div key={i} title={s.hint} style={{ background: 'var(--bg-1)', padding: '12px 16px', cursor: 'help' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+            <span className="eyebrow">{s.k}</span>
+            <span style={{ fontSize: 9.5, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>target {s.target}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+            <span className="mono" style={{
+              fontSize: 26, fontWeight: 600, letterSpacing: '-0.03em',
+              color: `var(--${s.tone})`,
+            }}>{s.v}</span>
+            <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{s.unit}</span>
+          </div>
+          <div style={{ marginTop: 6 }}>
+            <Meter value={s.v} max={s.unit === '%' ? 100 : 100} color={`var(--${s.tone})`} height={3}/>
+          </div>
+        </div>
+      ))}
+      <div style={{ background: 'var(--bg-1)', padding: '12px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3 }}>
+        <span className="eyebrow">Meeting</span>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>Q2 roadmap sync</div>
+        <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+          {MeetingData.fmtTime(metrics.duration)} · 4 participants
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SyncedTranscript({ t, setT }) {
+  const scrollRef = React.useRef();
+  const activeRef = React.useRef();
+  const activeIdx = MeetingData.SCRIPT.findLastIndex(l => l.t <= t);
+
+  React.useEffect(() => {
+    if (activeRef.current && scrollRef.current) {
+      const el = activeRef.current;
+      const parent = scrollRef.current;
+      parent.scrollTop = el.offsetTop - parent.offsetHeight / 2 + el.offsetHeight / 2;
+    }
+  }, [activeIdx]);
+
+  return (
+    <div ref={scrollRef} className="scroll" style={{
+      flex: 1, overflowY: 'auto', padding: '8px 16px 14px', minHeight: 0,
+    }}>
+      {MeetingData.SCRIPT.map((l, i) => {
+        const speaker = MeetingData.PARTICIPANTS.find(p => p.id === l.s);
+        const active = i === activeIdx;
+        const past = l.t < t;
+        return (
+          <div key={i} ref={active ? activeRef : null}
+               onClick={() => setT(l.t)}
+               style={{
+                 padding: '8px 10px',
+                 margin: '2px 0',
+                 borderRadius: 6,
+                 background: active ? 'var(--bg-2)' : 'transparent',
+                 border: '1px solid transparent',
+                 borderColor: active ? 'var(--line)' : 'transparent',
+                 cursor: 'pointer',
+                 opacity: past ? 1 : 0.45,
+                 transition: 'all var(--speed)',
+               }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+              <span style={{ width: 5, height: 5, borderRadius: '50%', background: speaker.color }}/>
+              <span style={{ fontSize: 11, fontWeight: 600, color: l.s === 'you' ? 'var(--ink-0)' : 'var(--ink-1)' }}>
+                {speaker.name}
+              </span>
+              <span className="mono" style={{ fontSize: 10, color: 'var(--ink-3)' }}>
+                {MeetingData.fmtTime(l.t)}
+              </span>
+              {l.interrupted && <Chip tone="rose" size="sm">interrupted</Chip>}
+            </div>
+            <div style={{ fontSize: 12.5, color: active ? 'var(--ink-0)' : 'var(--ink-1)', lineHeight: 1.5, paddingLeft: 11, textWrap: 'pretty' }}>
+              {l.txt}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Timeline({ events, total, t, setT }) {
+  const barRef = React.useRef();
+  const handleClick = (e) => {
+    const rect = barRef.current.getBoundingClientRect();
+    const pct = (e.clientX - rect.left) / rect.width;
+    setT(Math.max(0, Math.min(total, pct * total)));
+  };
+  // Synthetic waveform
+  const bars = React.useMemo(() => Array.from({ length: 120 }, (_, i) => {
+    const speechHeight = 0.3 + 0.7 * Math.abs(Math.sin(i * 0.43) * Math.cos(i * 0.19 + 1.3));
+    return speechHeight;
+  }), []);
+
+  return (
+    <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid var(--line-soft)' }}>
+      {/* Speaker lanes */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 8 }}>
+        {MeetingData.PARTICIPANTS.map(p => {
+          const segments = MeetingData.SCRIPT.filter(l => l.s === p.id).map(l => ({
+            start: l.t / total * 100,
+            width: Math.min(100, (l.txt.split(/\s+/).length * 0.35) / total * 100),
+          }));
+          return (
+            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{
+                width: 28, fontSize: 9.5, color: 'var(--ink-2)',
+                fontFamily: 'var(--font-mono)',
+              }}>{p.initials}</span>
+              <div style={{
+                position: 'relative', flex: 1, height: 6,
+                background: 'var(--bg-inset)', borderRadius: 3,
+              }}>
+                {segments.map((seg, i) => (
+                  <div key={i} style={{
+                    position: 'absolute', left: `${seg.start}%`, width: `${seg.width}%`,
+                    top: 0, bottom: 0, background: p.color, opacity: 0.5, borderRadius: 2,
+                  }}/>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Waveform + events */}
+      <div ref={barRef} onClick={handleClick} style={{
+        position: 'relative', height: 44, cursor: 'pointer',
+        background: 'var(--bg-inset)', borderRadius: 6,
+        padding: '6px 4px',
+        userSelect: 'none',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 1, height: '100%' }}>
+          {bars.map((h, i) => {
+            const atT = (i / bars.length) * total;
+            const past = atT <= t;
+            return (
+              <div key={i} style={{
+                flex: 1, height: `${h * 100}%`,
+                background: past ? 'var(--ink-1)' : 'var(--line-strong)',
+                borderRadius: 0.5,
+                transition: 'background var(--speed)',
+              }}/>
+            );
+          })}
+        </div>
+
+        {/* Event flags */}
+        {events.map((e, i) => (
+          <div key={i} onClick={(ev) => { ev.stopPropagation(); setT(e.t); }}
+               style={{
+                 position: 'absolute', left: `${(e.t / total) * 100}%`,
+                 top: -3, bottom: -3,
+                 width: 2, background: `var(--${e.tone})`,
+                 transform: 'translateX(-50%)',
+                 cursor: 'pointer',
+               }}
+               title={`${e.label} · ${MeetingData.fmtTime(e.t)}`}>
+            <div style={{
+              position: 'absolute', top: -5, left: '50%', transform: 'translateX(-50%)',
+              width: 8, height: 8, borderRadius: '50%',
+              background: `var(--${e.tone})`, border: '2px solid var(--bg-1)',
+            }}/>
+          </div>
+        ))}
+
+        {/* Playhead */}
+        <div style={{
+          position: 'absolute', left: `${(t / total) * 100}%`,
+          top: -4, bottom: -4, width: 2,
+          background: 'var(--ink-0)', transform: 'translateX(-50%)',
+          pointerEvents: 'none',
+        }}>
+          <div style={{
+            position: 'absolute', top: -6, left: '50%', transform: 'translateX(-50%)',
+            width: 10, height: 10, background: 'var(--ink-0)', borderRadius: 2,
+          }}/>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5, fontSize: 10, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>
+        <span>00:00</span>
+        <span>{MeetingData.fmtTime(total / 2)}</span>
+        <span>{MeetingData.fmtTime(total)}</span>
+      </div>
+    </div>
+  );
+}
+
+function CurrentInsight({ nudge }) {
+  return (
+    <div style={{
+      padding: 12,
+      background: `var(--${nudge.tone}-soft)`,
+      border: `1px solid var(--${nudge.tone}-line)`,
+      borderRadius: 8,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: `var(--${nudge.tone})` }}/>
+        <span className="eyebrow" style={{ color: `var(--${nudge.tone})` }}>{nudge.type}</span>
+        <span className="mono" style={{ fontSize: 10, color: 'var(--ink-2)' }}>at {MeetingData.fmtTime(nudge.t)}</span>
+        <div style={{ flex: 1 }}/>
+        <Confidence level={nudge.confidence}/>
+      </div>
+      <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 3 }}>{nudge.title}</div>
+      <div style={{ fontSize: 12, color: 'var(--ink-1)', lineHeight: 1.5 }}>{nudge.detail}</div>
+      {nudge.signals && (
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 8 }}>
+          {nudge.signals.map((s, i) => (
+            <span key={i} className="mono" style={{
+              fontSize: 10.5, color: 'var(--ink-2)',
+              padding: '2px 6px', background: 'var(--bg-1)',
+              border: '1px solid var(--line-soft)', borderRadius: 4,
+            }}>{s}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CoachCard({ nudge, active, onJump }) {
+  return (
+    <div style={{
+      padding: 12,
+      background: active ? 'var(--bg-2)' : 'var(--bg-1)',
+      border: '1px solid',
+      borderColor: active ? `var(--${nudge.tone}-line)` : 'var(--line-soft)',
+      borderRadius: 8,
+      transition: 'all var(--speed)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <span style={{ width: 5, height: 5, borderRadius: '50%', background: `var(--${nudge.tone})` }}/>
+        <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-1)' }}>{nudge.title}</span>
+        <div style={{ flex: 1 }}/>
+        <button onClick={onJump} className="mono" style={{
+          border: 'none', background: 'transparent', color: 'var(--ink-2)',
+          fontSize: 10.5, cursor: 'pointer', padding: 0,
+        }}>jump ↗</button>
+      </div>
+      <div style={{
+        padding: '9px 11px',
+        background: 'var(--bg-inset)',
+        border: '1px solid var(--line-soft)',
+        borderRadius: 6,
+        fontSize: 12.5, fontStyle: 'italic', color: 'var(--ink-0)',
+        lineHeight: 1.5,
+      }}>
+        {nudge.action.phrase}
+      </div>
+      <div style={{ marginTop: 6, fontSize: 10.5, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>
+        at {MeetingData.fmtTime(nudge.t)} · instead of what you said
+      </div>
+    </div>
+  );
+}
+
+window.Review = Review;
+
+
+// === components/Profile.jsx ===
+// Profile.jsx — Personal profile & learning model
+function Profile() {
+  const [goal, setGoal] = React.useState('listen');
+
+  return (
+    <div style={{
+      flex: 1, display: 'grid',
+      gridTemplateColumns: '1fr 1.4fr',
+      gap: 14, padding: 14, minHeight: 0, overflow: 'hidden',
+    }}>
+      {/* LEFT — identity + goals */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minHeight: 0 }}>
+        <Panel eyebrow="Profile" title="You" dense>
+          <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <div style={{
+                width: 46, height: 46, borderRadius: 10,
+                background: 'var(--blue-soft)',
+                border: '1px solid var(--blue-line)',
+                display: 'grid', placeItems: 'center',
+                color: 'var(--blue)', fontFamily: 'var(--font-mono)',
+                fontWeight: 600, fontSize: 16, letterSpacing: '-0.03em',
+              }}>YA</div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>Your Avatar</div>
+                <div style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>Product Lead · 28 meetings / week</div>
+              </div>
+            </div>
+
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1,
+              background: 'var(--line)', border: '1px solid var(--line)', borderRadius: 6, overflow: 'hidden',
+            }}>
+              <MiniStat k="Meetings" v="142" hint="last 90d"/>
+              <MiniStat k="Coached hours" v="86" hint="live on"/>
+              <MiniStat k="Streak" v="11d" hint="daily use"/>
+            </div>
+          </div>
+        </Panel>
+
+        <Panel eyebrow="Focus" title="Active goals" dense
+          right={<button style={btn()}>+ Add</button>}>
+          <div style={{ padding: '4px 8px 10px' }}>
+            <GoalChoice
+              id="listen" selected={goal === 'listen'} onSelect={setGoal}
+              icon="users" label="Improve listening"
+              desc="Acknowledge objections, reduce interruptions"
+              progress={54} delta={+9}
+            />
+            <GoalChoice
+              id="assertive" selected={goal === 'assertive'} onSelect={setGoal}
+              icon="flag" label="Be more assertive"
+              desc="Make your recommendation clear upfront"
+              progress={71} delta={+4}
+            />
+            <GoalChoice
+              id="clarity" selected={goal === 'clarity'} onSelect={setGoal}
+              icon="sparkle" label="Improve clarity"
+              desc="Fewer filler words, shorter sentences"
+              progress={78} delta={+14}
+            />
+            <GoalChoice
+              id="balance" selected={goal === 'balance'} onSelect={setGoal}
+              icon="pulse" label="Balance talk time"
+              desc="Under 50% in most meetings"
+              progress={48} delta={-3} negative
+            />
+          </div>
+        </Panel>
+      </div>
+
+      {/* RIGHT — trends */}
+      <Panel eyebrow="Learning model" title="Your evolution" dense
+        right={
+          <div style={{ display: 'flex', gap: 4, background: 'var(--bg-inset)', padding: 2, borderRadius: 6, border: '1px solid var(--line-soft)' }}>
+            {['7d', '30d', '90d', 'All'].map((r, i) => (
+              <button key={r} style={{
+                border: 'none', background: i === 2 ? 'var(--bg-2)' : 'transparent',
+                color: i === 2 ? 'var(--ink-0)' : 'var(--ink-2)',
+                fontSize: 10.5, padding: '3px 8px', borderRadius: 4,
+                cursor: 'pointer', fontFamily: 'var(--font-mono)',
+                boxShadow: i === 2 ? 'var(--shadow-card)' : 'none',
+              }}>{r}</button>
+            ))}
+          </div>
+        }>
+        <div className="scroll" style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 14, minHeight: 0 }}>
+          <TrendChart
+            title="Talk time balance"
+            subtitle="Your share of speaking time. Target ≤ 50%."
+            current="48%" delta="−14pp since Jan"
+            tone="green"
+            data={[72, 68, 70, 65, 66, 61, 58, 55, 54, 51, 49, 48]}
+            target={50}
+            maxY={100}
+            yLabel="%"
+          />
+          <TrendChart
+            title="Interruptions per meeting"
+            subtitle="Events where you cut off another speaker."
+            current="1.4" delta="−2.1 since Jan"
+            tone="green"
+            data={[3.5, 3.2, 3.3, 3.0, 2.8, 2.5, 2.2, 2.0, 1.9, 1.7, 1.5, 1.4]}
+            target={1}
+            maxY={4}
+            yLabel="/mtg"
+          />
+          <TrendChart
+            title="Sentiment impact on others"
+            subtitle="How your tone shifts the room average."
+            current="+0.12" delta="was −0.08"
+            tone="blue"
+            data={[-0.1, -0.08, -0.06, -0.04, 0, 0.02, 0.04, 0.06, 0.08, 0.09, 0.11, 0.12]}
+            centerZero
+            maxY={0.2}
+            minY={-0.2}
+            yLabel=""
+          />
+
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>What the model has learned about you</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+              <Insight tone="blue"
+                title="You pitch-shift up when challenged"
+                detail="Pace +22%, pitch variance +18% within 4s of pushback. Suggests defensiveness."
+                since="detected in 23 meetings"/>
+              <Insight tone="amber"
+                title="You interrupt most with Priya"
+                detail="7 of 12 interruptions this quarter. Not a pattern with other teammates."
+                since="confidence 91%"/>
+              <Insight tone="green"
+                title="You summarize better after 30m"
+                detail="Longer meetings show +34% recap quality. Lean on this for long discussions."
+                since="based on 41 meetings"/>
+              <Insight tone="blue"
+                title="Your best decisions come from asking"
+                detail="Meetings with ≥4 questions from you have 2.1× outcome follow-through."
+                since="correlational"/>
+            </div>
+          </div>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function MiniStat({ k, v, hint }) {
+  return (
+    <div style={{ padding: '10px 12px', background: 'var(--bg-1)' }}>
+      <div className="eyebrow" style={{ marginBottom: 3 }}>{k}</div>
+      <div className="mono" style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.02em' }}>{v}</div>
+      <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>{hint}</div>
+    </div>
+  );
+}
+
+function GoalChoice({ id, selected, onSelect, icon, label, desc, progress, delta, negative }) {
+  return (
+    <button onClick={() => onSelect(id)} style={{
+      width: '100%', textAlign: 'left', cursor: 'pointer',
+      padding: '10px 10px', borderRadius: 8, margin: '2px 0',
+      background: selected ? 'var(--bg-2)' : 'transparent',
+      border: '1px solid', borderColor: selected ? 'var(--line)' : 'transparent',
+      color: 'var(--ink-0)', fontFamily: 'inherit',
+      display: 'flex', gap: 10, alignItems: 'flex-start',
+      transition: 'all var(--speed)',
+    }}>
+      <div style={{
+        width: 26, height: 26, borderRadius: 6,
+        background: selected ? 'var(--blue-soft)' : 'var(--bg-inset)',
+        border: '1px solid', borderColor: selected ? 'var(--blue-line)' : 'var(--line-soft)',
+        display: 'grid', placeItems: 'center',
+        color: selected ? 'var(--blue)' : 'var(--ink-2)',
+        flexShrink: 0,
+      }}>{I(icon, { size: 13 })}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 600 }}>{label}</span>
+          <div style={{ flex: 1 }}/>
+          <span className="mono" style={{ fontSize: 10.5, color: negative ? 'var(--rose)' : 'var(--green)' }}>
+            {delta > 0 ? '+' : ''}{delta}
+          </span>
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--ink-2)', marginTop: 1, marginBottom: 6 }}>{desc}</div>
+        <Meter value={progress} color="var(--blue)" height={3}/>
+      </div>
+    </button>
+  );
+}
+
+function TrendChart({ title, subtitle, current, delta, tone = 'blue', data, target, maxY, minY = 0, centerZero, yLabel }) {
+  const W = 560, H = 120, padL = 30, padR = 10, padT = 10, padB = 20;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+
+  const y = v => padT + chartH - ((v - minY) / (maxY - minY)) * chartH;
+  const x = i => padL + (i / (data.length - 1)) * chartW;
+
+  const pts = data.map((v, i) => `${x(i)},${y(v)}`).join(' ');
+  const areaPts = `${padL},${padT + chartH} ${pts} ${padL + chartW},${padT + chartH}`;
+
+  return (
+    <div style={{
+      background: 'var(--bg-2)',
+      border: '1px solid var(--line-soft)',
+      borderRadius: 10, padding: 14,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 1 }}>{title}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>{subtitle}</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div className="mono" style={{
+            fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em',
+            color: `var(--${tone})`,
+          }}>{current}</div>
+          <div style={{ fontSize: 10.5, color: 'var(--ink-2)', fontFamily: 'var(--font-mono)' }}>
+            {delta}
+          </div>
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 120, display: 'block' }}>
+        <defs>
+          <linearGradient id={`g-${tone}-${title}`} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor={`var(--${tone})`} stopOpacity="0.25"/>
+            <stop offset="100%" stopColor={`var(--${tone})`} stopOpacity="0"/>
+          </linearGradient>
+        </defs>
+        {/* grid */}
+        {[0, 0.5, 1].map(f => (
+          <line key={f} x1={padL} x2={padL + chartW}
+                y1={padT + chartH * f} y2={padT + chartH * f}
+                stroke="var(--line-soft)" strokeWidth="1" strokeDasharray="2 3"/>
+        ))}
+        {centerZero && (
+          <line x1={padL} x2={padL + chartW}
+                y1={y(0)} y2={y(0)}
+                stroke="var(--line-strong)" strokeWidth="1"/>
+        )}
+        {/* target line */}
+        {target != null && (
+          <g>
+            <line x1={padL} x2={padL + chartW}
+                  y1={y(target)} y2={y(target)}
+                  stroke="var(--green)" strokeWidth="1" strokeDasharray="3 3" opacity="0.6"/>
+            <text x={padL + chartW - 2} y={y(target) - 3} fill="var(--green)"
+                  fontSize="9" textAnchor="end" fontFamily="var(--font-mono)">
+              target {target}{yLabel}
+            </text>
+          </g>
+        )}
+        {/* area */}
+        <polygon points={areaPts} fill={`url(#g-${tone}-${title})`}/>
+        {/* line */}
+        <polyline points={pts} fill="none" stroke={`var(--${tone})`} strokeWidth="1.75"
+                  strokeLinecap="round" strokeLinejoin="round"/>
+        {/* last point */}
+        <circle cx={x(data.length - 1)} cy={y(data[data.length - 1])} r="3.5"
+                fill={`var(--${tone})`} stroke="var(--bg-2)" strokeWidth="2"/>
+        {/* x labels */}
+        <text x={padL} y={H - 5} fill="var(--ink-3)" fontSize="9" fontFamily="var(--font-mono)">Jan</text>
+        <text x={padL + chartW / 2} y={H - 5} fill="var(--ink-3)" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle">W25</text>
+        <text x={padL + chartW} y={H - 5} fill="var(--ink-3)" fontSize="9" fontFamily="var(--font-mono)" textAnchor="end">Apr</text>
+        {/* y axis label */}
+        <text x={padL - 6} y={padT + 4} fill="var(--ink-3)" fontSize="9" fontFamily="var(--font-mono)" textAnchor="end">{maxY}{yLabel}</text>
+        <text x={padL - 6} y={padT + chartH} fill="var(--ink-3)" fontSize="9" fontFamily="var(--font-mono)" textAnchor="end">{minY}{yLabel}</text>
+      </svg>
+    </div>
+  );
+}
+
+function Insight({ tone, title, detail, since }) {
+  return (
+    <div style={{
+      padding: 12,
+      background: 'var(--bg-2)',
+      border: '1px solid var(--line-soft)',
+      borderLeft: `2px solid var(--${tone})`,
+      borderRadius: 6,
+    }}>
+      <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>{title}</div>
+      <div style={{ fontSize: 11.5, color: 'var(--ink-1)', lineHeight: 1.5 }}>{detail}</div>
+      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6, fontFamily: 'var(--font-mono)' }}>
+        {since}
+      </div>
+    </div>
+  );
+}
+
+function btn() {
+  return {
+    border: '1px solid var(--line)', background: 'var(--bg-2)',
+    color: 'var(--ink-1)', fontSize: 11, padding: '3px 8px',
+    borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
+  };
+}
+
+window.Profile = Profile;
+
+
+// === components/App.jsx ===
+// App.jsx — root + screen router + tweaks
+const TWEAKS = /*EDITMODE-BEGIN*/{
+  "theme": "dark",
+  "nudgeStyle": "card",
+  "startScreen": "live"
+}/*EDITMODE-END*/;
+
+function App() {
+  const [theme, setTheme] = React.useState(TWEAKS.theme);
+  const [nudgeStyle, setNudgeStyle] = React.useState(TWEAKS.nudgeStyle);
+  const [showTweaks, setShowTweaks] = React.useState(false);
+  const [editMode, setEditMode] = React.useState(false);
+
+  const stored = (typeof localStorage !== 'undefined' && localStorage.getItem('talksmith.screen')) || TWEAKS.startScreen;
+  const [screen, setScreen] = React.useState(stored);
+  const [running, setRunning] = React.useState(true);
+  const [speed, setSpeed] = React.useState(1);
+  const [muted, setMuted] = React.useState(false);
+  const [idle, setIdle] = React.useState(false);
+
+  React.useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
+  React.useEffect(() => { localStorage.setItem('talksmith.screen', screen); }, [screen]);
+
+  const sim = MeetingData.useMeetingSim({ running: running && !idle, speed, startAt: 48 });
+
+  const [reviewT, setReviewT] = React.useState(42);
+  const [reviewPlaying, setReviewPlaying] = React.useState(false);
+  const reviewSim = React.useMemo(() => ({
+    ...sim,
+    t: reviewT, tc: MeetingData.fmtTime(reviewT),
+    totalDuration: 175,
+    timelineEvents: MeetingData.TIMELINE_EVENTS,
+    participants: MeetingData.PARTICIPANTS,
+  }), [reviewT, sim]);
+
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.metaKey || e.ctrlKey) {
+        if (e.key === '1') { setScreen('live'); e.preventDefault(); }
+        if (e.key === '2') { setScreen('overlay'); e.preventDefault(); }
+        if (e.key === '3') { setScreen('review'); e.preventDefault(); }
+        if (e.key === '4') { setScreen('profile'); e.preventDefault(); }
+        if (e.key.toLowerCase() === 'm') { setMuted(m => !m); e.preventDefault(); }
+      } else if (e.key === ' ') {
+        if (screen === 'live' || screen === 'overlay') setRunning(r => !r);
+        if (screen === 'review') setReviewPlaying(p => !p);
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [screen]);
+
+  React.useEffect(() => {
+    const onMsg = (e) => {
+      if (e.data?.type === '__activate_edit_mode') setEditMode(true);
+      if (e.data?.type === '__deactivate_edit_mode') setEditMode(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+  const persist = (key, val) => {
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { [key]: val } }, '*');
+  };
+
+  const meetingState = screen === 'live' || screen === 'overlay'
+    ? { recording: running && !idle, timecode: sim.tc }
+    : null;
+
+  return (
+    <div style={appStyles.chrome} data-screen-label={`Talksmith — ${screen}`}>
+      <TitleBar
+        meetingState={meetingState}
+        activeScreen={screen}
+        onScreenChange={setScreen}
+        onSettings={() => setShowTweaks(s => !s)}
+      />
+
+      <div style={{
+        height: 40, flexShrink: 0, borderBottom: '1px solid var(--line)',
+        display: 'flex', alignItems: 'center', gap: 10, padding: '0 14px',
+        background: 'var(--bg-0)',
+      }}>
+        {screen === 'live' && (
+          <>
+            <Chip tone="neutral">Q2 roadmap sync</Chip>
+            <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>Thu · 2:00 PM · 30m scheduled</span>
+            <div style={{ flex: 1 }}/>
+            <button onClick={() => setIdle(i => !i)} style={subBtn(idle)}>
+              {idle ? 'Start meeting' : 'Idle state'}
+            </button>
+            <button onClick={() => setMuted(m => !m)} style={subBtn(muted)}>
+              {muted ? I('bellOff', { size: 12 }) : I('bell', { size: 12 })}
+              {muted ? 'Muted' : 'Coaching on'}
+            </button>
+          </>
+        )}
+        {screen === 'overlay' && (
+          <>
+            <Chip tone="neutral">Compact mode</Chip>
+            <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>Shown while you screen-share</span>
+            <div style={{ flex: 1 }}/>
+            <span className="mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>⌘E expands · ⌘⇧H hides</span>
+          </>
+        )}
+        {screen === 'review' && (
+          <>
+            <Chip tone="neutral">Q2 roadmap sync · Apr 17</Chip>
+            <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{MeetingData.fmtTime(175)} · 4 participants · 6 moments flagged</span>
+            <div style={{ flex: 1 }}/>
+            <button style={subBtn(false)}>Share review</button>
+            <button style={subBtn(false)}>Export notes</button>
+          </>
+        )}
+        {screen === 'profile' && (
+          <>
+            <Chip tone="neutral">Personal model</Chip>
+            <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>Last updated 14m ago · 142 meetings analyzed</span>
+            <div style={{ flex: 1 }}/>
+            <button style={subBtn(false)}>Explain model</button>
+          </>
+        )}
+      </div>
+
+      {idle && screen === 'live' ? (
+        <IdleState onStart={() => setIdle(false)}/>
+      ) : screen === 'live' ? (
+        <LiveDashboard sim={sim} running={running} onToggleRun={() => setRunning(r => !r)}
+          muted={muted} onToggleMute={() => setMuted(m => !m)}
+          variant={nudgeStyle} speed={speed} onSpeed={setSpeed}/>
+      ) : screen === 'overlay' ? (
+        <CompactOverlay sim={sim} running={running} onExpand={() => setScreen('live')}
+          muted={muted} onToggleMute={() => setMuted(m => !m)}/>
+      ) : screen === 'review' ? (
+        <Review sim={reviewSim} t={reviewT} setT={setReviewT}
+          playing={reviewPlaying} onTogglePlay={() => setReviewPlaying(p => !p)}/>
+      ) : (
+        <Profile/>
+      )}
+
+      <div style={{
+        height: 24, flexShrink: 0, borderTop: '1px solid var(--line)',
+        background: 'var(--bg-1)',
+        display: 'flex', alignItems: 'center', padding: '0 12px', gap: 12,
+        fontSize: 10.5, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)',
+      }}>
+        <span>Talksmith v0.4.2</span><span>·</span>
+        <span>On-device audio · cloud analysis</span>
+        <div style={{ flex: 1 }}/>
+        <span>⌘K commands</span><span>·</span>
+        <span>⌘, settings</span><span>·</span>
+        <span>⌘M mute coaching</span>
+      </div>
+
+      {(showTweaks || editMode) && (
+        <TweaksPanel
+          theme={theme} setTheme={(v) => { setTheme(v); persist('theme', v); }}
+          nudgeStyle={nudgeStyle} setNudgeStyle={(v) => { setNudgeStyle(v); persist('nudgeStyle', v); }}
+          onClose={() => { setShowTweaks(false); }}
+          editMode={editMode}
+        />
+      )}
+    </div>
+  );
+}
+
+function subBtn(active) {
+  return {
+    border: '1px solid var(--line)',
+    background: active ? 'var(--bg-2)' : 'transparent',
+    color: active ? 'var(--ink-0)' : 'var(--ink-1)',
+    fontSize: 11.5, padding: '4px 10px', borderRadius: 5,
+    cursor: 'pointer', fontFamily: 'inherit',
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+  };
+}
+
+function IdleState({ onStart }) {
+  return (
+    <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 40, background: 'var(--bg-0)' }}>
+      <div style={{ maxWidth: 420, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+        <div style={{
+          width: 56, height: 56, borderRadius: 14,
+          background: 'var(--bg-1)', border: '1px solid var(--line)',
+          display: 'grid', placeItems: 'center', color: 'var(--ink-1)', position: 'relative',
+        }}>
+          {I('mic', { size: 22 })}
+          <span style={{
+            position: 'absolute', inset: -4, borderRadius: 18,
+            border: '1px solid var(--blue-line)', animation: 'breathe 2.4s ease-in-out infinite',
+          }}/>
+        </div>
+        <div>
+          <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 6, letterSpacing: '-0.01em' }}>No active meeting</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+            Talksmith is watching your calendar. Your next meeting <b style={{ color: 'var(--ink-1)' }}>Q2 roadmap sync</b> starts in 3 minutes — I'll join automatically, or click below to start now.
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={onStart} style={{
+            border: '1px solid var(--ink-0)', background: 'var(--ink-0)', color: 'var(--bg-0)',
+            fontSize: 12.5, fontWeight: 500, padding: '8px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+          }}>Start listening now</button>
+          <button style={{
+            border: '1px solid var(--line)', background: 'transparent', color: 'var(--ink-1)',
+            fontSize: 12.5, padding: '8px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+          }}>Review last meeting</button>
+        </div>
+        <div style={{
+          marginTop: 12, padding: 12, width: '100%',
+          background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 8,
+          textAlign: 'left',
+        }}>
+          <div className="eyebrow" style={{ marginBottom: 8 }}>Today's meetings</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {[
+              { t: '2:00 PM', n: 'Q2 roadmap sync', ppl: 4, next: true },
+              { t: '3:30 PM', n: '1:1 with Priya',  ppl: 2 },
+              { t: '4:30 PM', n: 'Design review',   ppl: 6 },
+            ].map((m, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '6px 8px', borderRadius: 5,
+                background: m.next ? 'var(--blue-soft)' : 'transparent',
+                border: '1px solid', borderColor: m.next ? 'var(--blue-line)' : 'transparent',
+              }}>
+                <span className="mono" style={{ fontSize: 11, color: 'var(--ink-2)', width: 55 }}>{m.t}</span>
+                <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-0)', fontWeight: m.next ? 500 : 400 }}>{m.n}</span>
+                <span style={{ fontSize: 10.5, color: 'var(--ink-2)', fontFamily: 'var(--font-mono)' }}>{m.ppl}p</span>
+                {m.next && <Chip tone="blue" size="sm">up next</Chip>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TweaksPanel({ theme, setTheme, nudgeStyle, setNudgeStyle, onClose, editMode }) {
+  return (
+    <div style={{
+      position: 'fixed', bottom: 40, left: 20, width: 240,
+      background: 'var(--bg-1)', border: '1px solid var(--line-strong)',
+      borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-pop)', zIndex: 100,
+      animation: 'fadeUp 200ms var(--ease) both',
+    }}>
+      <div style={{
+        padding: '10px 12px', borderBottom: '1px solid var(--line-soft)',
+        display: 'flex', alignItems: 'center', gap: 8,
+      }}>
+        <span className="eyebrow">Tweaks</span>
+        <div style={{ flex: 1 }}/>
+        {!editMode && (
+          <button onClick={onClose} style={{
+            border: 'none', background: 'transparent', color: 'var(--ink-2)',
+            cursor: 'pointer', padding: 2, display: 'grid', placeItems: 'center',
+          }}>{I('x', { size: 12 })}</button>
+        )}
+      </div>
+      <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--ink-1)', marginBottom: 5 }}>Theme</div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {['dark', 'light'].map(v => (
+              <button key={v} onClick={() => setTheme(v)} style={segBtn(theme === v)}>
+                {v === 'dark' ? I('moon', { size: 11 }) : I('sun', { size: 11 })}{v}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--ink-1)', marginBottom: 5 }}>Nudge style</div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {['card', 'inline', 'pill'].map(v => (
+              <button key={v} onClick={() => setNudgeStyle(v)} style={segBtn(nudgeStyle === v)}>{v}</button>
+            ))}
+          </div>
+          <div style={{ fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.4 }}>
+            Controls how active coaching cues render in the center stream.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function segBtn(active) {
+  return {
+    flex: 1, border: '1px solid', borderColor: active ? 'var(--line-strong)' : 'var(--line-soft)',
+    background: active ? 'var(--bg-2)' : 'var(--bg-inset)',
+    color: active ? 'var(--ink-0)' : 'var(--ink-2)',
+    fontSize: 11, padding: '5px 8px', borderRadius: 5,
+    cursor: 'pointer', fontFamily: 'inherit',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+    textTransform: 'capitalize', transition: 'all var(--speed)',
+  };
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+
+
+</script>
+</body>
+</html>
