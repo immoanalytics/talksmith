@@ -806,7 +806,9 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
   const [suppressed, setSuppressed] = React.useState(() => new Map());
 
   // Reset the clock and clear suppressed cues whenever the user picks a
-  // different scenario from the Tweaks panel.
+  // different scenario. The stale-array fix lives in the memo deps below
+  // (scenarioId is included so SCRIPT/NUDGE_SCRIPT changes are picked up);
+  // this effect just snaps t back to the new scenario's startAt.
   const lastScenario = React.useRef(scenarioId);
   React.useEffect(() => {
     if (lastScenario.current !== scenarioId) {
@@ -832,24 +834,26 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
     return () => clearInterval(id);
   }, [running, speed, totalDuration]);
 
-  // Transcript: stable until we cross a script line boundary.
+  // Transcript: stable until we cross a script line boundary OR the user
+  // swaps scenarios (which changes SCRIPT under our feet).
   const transcriptCount = React.useMemo(() => {
     let i = 0;
     while (i < SCRIPT.length && SCRIPT[i].t <= t) i++;
     return i;
-  }, [t]);
+  }, [t, scenarioId]);
   const transcript = React.useMemo(
     () => SCRIPT.slice(0, transcriptCount),
-    [transcriptCount]
+    [transcriptCount, scenarioId] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  // Candidate cues: window membership only changes at nudge t / t+duration boundaries.
+  // Candidate cues: window membership only changes at nudge t / t+duration
+  // boundaries — and when the scenario changes (different nudge set).
   const candidateIds = React.useMemo(
     () => NUDGE_SCRIPT
       .filter(n => t >= n.t && t <= n.t + n.duration)
       .map(n => n.id)
       .join(','),
-    [t]
+    [t, scenarioId]
   );
   const candidates = React.useMemo(
     () => NUDGE_SCRIPT.filter(n => {
@@ -860,7 +864,7 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
       if (s.mode === 'snooze') return s.until <= t;
       return true;
     }),
-    [candidateIds, suppressed, t] // eslint-disable-line react-hooks/exhaustive-deps
+    [candidateIds, suppressed, t, scenarioId] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Head coach: hard cap of 2 simultaneous cues. Priority = urgency tier
@@ -881,14 +885,15 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
       .map(x => x.n);
   }, [candidates, activeGoal]);
 
-  // History grows only when t crosses a nudge's start time.
+  // History grows only when t crosses a nudge's start time, or when the
+  // scenario itself changes (different nudge set).
   const historyCount = React.useMemo(
     () => NUDGE_SCRIPT.filter(n => t >= n.t).length,
-    [t]
+    [t, scenarioId]
   );
   const nudgeHistory = React.useMemo(
     () => NUDGE_SCRIPT.filter(n => t >= n.t).slice().reverse(),
-    [historyCount] // eslint-disable-line react-hooks/exhaustive-deps
+    [historyCount, scenarioId] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Metrics: split heavy work. Language regex pass only re-runs when the

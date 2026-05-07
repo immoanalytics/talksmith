@@ -11,17 +11,17 @@
 // designers iterate on.
 
 const { test, expect } = require('@playwright/test');
-const path = require('path');
 
-const APP_URL = 'file://' + path.resolve(__dirname, '..', 'Talksmith.html');
+const APP_PATH = '/Talksmith.html';
 
 // React/Babel load from CDN. Wait until React has actually rendered the
 // chrome before each test so we don't race the boot skeleton.
 async function bootApp(page) {
-  await page.goto(APP_URL);
+  await page.goto(APP_PATH);
   await page.locator('[data-testid="title-bar"]').waitFor({ timeout: 15_000 });
   // Clear localStorage so each test starts from defaults (theme, scenario,
-  // dismissed cues etc). file:// URLs share storage between runs otherwise.
+  // dismissed cues, etc). The static server gives every test the same origin
+  // so storage would otherwise leak between runs.
   await page.evaluate(() => {
     try { Object.keys(localStorage).filter(k => k.startsWith('talksmith.')).forEach(k => localStorage.removeItem(k)); } catch {}
   });
@@ -31,7 +31,7 @@ async function bootApp(page) {
 
 test.describe('boot', () => {
   test('replaces the boot skeleton with the app chrome', async ({ page }) => {
-    await page.goto(APP_URL);
+    await page.goto(APP_PATH);
     await page.locator('[data-testid="title-bar"]').waitFor({ timeout: 15_000 });
     await expect(page.locator('.ts-boot')).toHaveCount(0);
     await expect(page.locator('[data-testid="title-bar"]')).toBeVisible();
