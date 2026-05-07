@@ -10,6 +10,7 @@ function Nudge({ nudge, onDismiss, onSnooze, variant = 'card', compact = false }
   const toneColor = `var(--${tone})`;
   const toneBg = `var(--${tone}-soft)`;
   const toneLine = `var(--${tone}-line)`;
+  const coach = nudge.coach ? MeetingData.COACHES[nudge.coach] : null;
 
   if (variant === 'pill') {
     return (
@@ -52,7 +53,13 @@ function Nudge({ nudge, onDismiss, onSnooze, variant = 'card', compact = false }
       }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-            <span className="eyebrow" style={{ color: toneColor }}>{nudge.type}</span>
+            {coach && (
+              <span style={{ fontSize: 10.5, fontWeight: 500, color: toneColor }}>
+                {coach.name}
+              </span>
+            )}
+            <span style={{ color: 'var(--ink-3)', fontSize: 10 }}>·</span>
+            <span className="eyebrow" style={{ color: 'var(--ink-2)' }}>{nudge.type}</span>
             <Confidence level={nudge.confidence} />
           </div>
           <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{nudge.title}</div>
@@ -101,7 +108,14 @@ function Nudge({ nudge, onDismiss, onSnooze, variant = 'card', compact = false }
             width: 7, height: 7, borderRadius: '50%', background: toneColor,
             animation: nudge.positive ? 'none' : 'pulseDot 1.6s ease-in-out infinite',
           }} />
-          <span className="eyebrow" style={{ color: toneColor }}>{nudge.type}</span>
+          {coach && (
+            <span style={{
+              fontSize: 10.5, fontWeight: 500, color: toneColor,
+              fontFamily: 'var(--font-sans)', letterSpacing: '-0.005em',
+            }}>{coach.name}</span>
+          )}
+          <span style={{ color: 'var(--ink-3)', fontSize: 10 }}>·</span>
+          <span className="eyebrow" style={{ color: 'var(--ink-2)' }}>{nudge.type}</span>
           <div style={{ flex: 1 }} />
           <Confidence level={nudge.confidence} />
           <span className="mono" style={{ fontSize: 10, color: 'var(--ink-2)' }}>

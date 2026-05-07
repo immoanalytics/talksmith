@@ -12,16 +12,19 @@ function App() {
   const [editMode, setEditMode] = React.useState(false);
 
   const stored = (typeof localStorage !== 'undefined' && localStorage.getItem('talksmith.screen')) || TWEAKS.startScreen;
+  const storedGoal = (typeof localStorage !== 'undefined' && localStorage.getItem('talksmith.goal')) || 'listen';
   const [screen, setScreen] = React.useState(stored);
   const [running, setRunning] = React.useState(true);
   const [speed, setSpeed] = React.useState(1);
   const [muted, setMuted] = React.useState(false);
   const [idle, setIdle] = React.useState(false);
+  const [activeGoal, setActiveGoal] = React.useState(storedGoal);
 
   React.useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
   React.useEffect(() => { localStorage.setItem('talksmith.screen', screen); }, [screen]);
+  React.useEffect(() => { localStorage.setItem('talksmith.goal', activeGoal); }, [activeGoal]);
 
-  const sim = MeetingData.useMeetingSim({ running: running && !idle, speed, startAt: 48 });
+  const sim = MeetingData.useMeetingSim({ running: running && !idle, speed, startAt: 48, activeGoal });
 
   const [reviewT, setReviewT] = React.useState(42);
   const [reviewPlaying, setReviewPlaying] = React.useState(false);
@@ -137,7 +140,7 @@ function App() {
         <Review sim={reviewSim} t={reviewT} setT={setReviewT}
           playing={reviewPlaying} onTogglePlay={() => setReviewPlaying(p => !p)}/>
       ) : (
-        <Profile/>
+        <Profile activeGoal={activeGoal} setActiveGoal={setActiveGoal}/>
       )}
 
       <div style={{

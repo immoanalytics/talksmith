@@ -333,10 +333,10 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
         <Transcript transcript={sim.transcript} participants={sim.participants} t={sim.t}/>
       </Panel>
 
-      {/* CENTER — Guidance */}
+      {/* CENTER — Guidance, from the head coach */}
       <Panel
         eyebrow="Guidance"
-        title="Stream"
+        title="Head coach"
         dense
         right={
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -380,88 +380,48 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
           </span>
         ) : null}
       >
-        <div className="scroll" style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 14, minHeight: 0 }}>
-          {/* Talk time */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <span className="eyebrow">Speaking time</span>
-              <div style={{ flex: 1 }}/>
-              {sim.metrics.yourTalkPct > 60 && (
-                <Chip tone="amber" size="sm">above balance</Chip>
-              )}
+        <div className="scroll" style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 18, minHeight: 0 }}>
+          {/* Listening coach — your talk/silence balance */}
+          <CoachBlock name="Listening coach" scope="watching you">
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+                <span className="eyebrow">Speaking time</span>
+                <div style={{ flex: 1 }}/>
+                {sim.metrics.yourTalkPct > 60 && (
+                  <Chip tone="amber" size="sm">above balance</Chip>
+                )}
+              </div>
+              <TalkRatioBar participants={sim.metrics.talkRatio}/>
             </div>
-            <TalkRatioBar participants={sim.metrics.talkRatio}/>
-          </div>
-
-          {/* Tone */}
-          <div>
-            <div className="eyebrow" style={{ marginBottom: 6 }}>Tone</div>
-            <SentimentGauge value={sim.metrics.sentiment}/>
-          </div>
-
-          {/* LSM + IPA equilibrium — 2-up */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <div style={{
-              padding: '10px 11px', background: 'var(--bg-2)',
-              border: '1px solid var(--line-soft)', borderRadius: 8,
-            }}>
-              <div className="eyebrow" style={{ marginBottom: 4 }}>LSM</div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                <span className="mono" style={{ fontSize: 18, fontWeight: 600,
-                  color: sim.metrics.lsm < 0.55 ? 'var(--rose)' : sim.metrics.lsm > 0.75 ? 'var(--green)' : 'var(--ink-0)',
-                  letterSpacing:'-0.02em',
-                }}>{sim.metrics.lsm.toFixed(2)}</span>
+            <div>
+              <div style={{ display:'flex', alignItems:'center', marginBottom: 6 }}>
+                <span className="eyebrow">Silence after points</span>
+                <div style={{flex:1}}/>
+                <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>
+                  {sim.metrics.silenceContext}
+                </span>
               </div>
-              <div style={{ marginTop: 6 }}>
-                <Meter value={sim.metrics.lsm * 100} color={sim.metrics.lsm < 0.55 ? 'var(--rose)' : 'var(--blue)'} height={3}/>
-              </div>
-              <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 5 }}>
-                {sim.metrics.lsm < 0.55 ? 'misaligned' : sim.metrics.lsm > 0.75 ? 'synced' : 'matching'}
-              </div>
+              <SilenceBar gap={sim.metrics.silenceGap} context={sim.metrics.silenceContext}/>
             </div>
-            <div style={{
-              padding: '10px 11px', background: 'var(--bg-2)',
-              border: '1px solid var(--line-soft)', borderRadius: 8,
-            }}>
-              <div className="eyebrow" style={{ marginBottom: 4 }}>IPA balance</div>
-              <IPABalance taskRatio={sim.metrics.ipaTaskRatio}/>
-              <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 5 }}>
-                {sim.metrics.ipaDeviation > 0.2 ? 'task-heavy' : 'healthy'}
+          </CoachBlock>
+
+          {/* Team dynamics coach — group health */}
+          <CoachBlock name="Team dynamics coach" scope="watching the group">
+            <div>
+              <div className="eyebrow" style={{ marginBottom: 6 }}>Who's talking over whom</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                <InterruptCell
+                  label="you → others"
+                  value={sim.metrics.youInterruptedOthers}
+                  tone={sim.metrics.youInterruptedOthers > 0 ? 'rose' : 'neutral'}
+                />
+                <InterruptCell
+                  label="others → you"
+                  value={sim.metrics.othersInterruptedYou}
+                  tone="neutral"
+                />
               </div>
             </div>
-          </div>
-
-          {/* Interruption matrix */}
-          <div>
-            <div className="eyebrow" style={{ marginBottom: 6 }}>Interruption matrix</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-              <InterruptCell
-                label="you → others"
-                value={sim.metrics.youInterruptedOthers}
-                tone={sim.metrics.youInterruptedOthers > 0 ? 'rose' : 'neutral'}
-              />
-              <InterruptCell
-                label="others → you"
-                value={sim.metrics.othersInterruptedYou}
-                tone="neutral"
-              />
-            </div>
-          </div>
-
-          {/* Silence / dead-air tracker */}
-          <div>
-            <div style={{ display:'flex', alignItems:'center', marginBottom: 6 }}>
-              <span className="eyebrow">Silence</span>
-              <div style={{flex:1}}/>
-              <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>
-                {sim.metrics.silenceContext}
-              </span>
-            </div>
-            <SilenceBar gap={sim.metrics.silenceGap} context={sim.metrics.silenceContext}/>
-          </div>
-
-          {/* Engagement + Pace tiles */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <MetricTile
               label="Engagement"
               value={Math.round(sim.metrics.engagement * 100)}
@@ -469,26 +429,56 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
               hint="3 speakers · active"
               color={sim.metrics.engagement > 0.6 ? 'var(--green)' : 'var(--ink-0)'}
             />
-            <MetricTile
-              label="Pace"
-              value={Math.round(142 + sim.metrics.tension * 26)}
-              suffix="wpm"
-              hint="baseline 142"
-              color={sim.metrics.tension > 0.5 ? 'var(--amber)' : 'var(--ink-0)'}
-            />
-          </div>
+          </CoachBlock>
 
-          {/* Meeting goals */}
-          <div>
-            <div className="eyebrow" style={{ marginBottom: 8 }}>Meeting goals</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <GoalRow label="Speak less than 50%" current={sim.metrics.yourTalkPct} target={50} invert/>
-              <GoalRow label="Ask ≥ 3 questions" current={Math.floor(sim.t / 60)} target={3}/>
-              <GoalRow label="Acknowledge objections" current={sim.t > 102 ? 1 : 0} target={2}/>
+          {/* Tone coach — room temperature + alignment */}
+          <CoachBlock name="Tone coach" scope="watching the room">
+            <div>
+              <div className="eyebrow" style={{ marginBottom: 6 }}>Room temperature</div>
+              <SentimentGauge value={sim.metrics.sentiment}/>
             </div>
-          </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div style={{
+                padding: '10px 11px', background: 'var(--bg-2)',
+                border: '1px solid var(--line-soft)', borderRadius: 8,
+              }}>
+                <div className="eyebrow" style={{ marginBottom: 4 }}>Alignment</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                  <span className="mono" style={{ fontSize: 18, fontWeight: 600,
+                    color: sim.metrics.lsm < 0.55 ? 'var(--rose)' : sim.metrics.lsm > 0.75 ? 'var(--green)' : 'var(--ink-0)',
+                    letterSpacing:'-0.02em',
+                  }}>{sim.metrics.lsm.toFixed(2)}</span>
+                </div>
+                <div style={{ marginTop: 6 }}>
+                  <Meter value={sim.metrics.lsm * 100} color={sim.metrics.lsm < 0.55 ? 'var(--rose)' : 'var(--blue)'} height={3}/>
+                </div>
+                <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 5 }}>
+                  {sim.metrics.lsm < 0.55 ? 'misaligned' : sim.metrics.lsm > 0.75 ? 'in sync' : 'matching'}
+                </div>
+              </div>
+              <MetricTile
+                label="Pace"
+                value={Math.round(142 + sim.metrics.tension * 26)}
+                suffix="wpm"
+                hint="baseline 142"
+                color={sim.metrics.tension > 0.5 ? 'var(--amber)' : 'var(--ink-0)'}
+              />
+            </div>
+          </CoachBlock>
 
-          {/* Low audio quality — graceful degradation */}
+          {/* Outcomes coach — meeting arc */}
+          <CoachBlock name="Outcomes coach" scope="watching the arc">
+            <div>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>Meeting goals</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <GoalRow label="Speak less than 50%" current={sim.metrics.yourTalkPct} target={50} invert/>
+                <GoalRow label="Ask ≥ 3 questions" current={Math.floor(sim.t / 60)} target={3}/>
+                <GoalRow label="Acknowledge objections" current={sim.t > 102 ? 1 : 0} target={2}/>
+              </div>
+            </div>
+          </CoachBlock>
+
+          {/* Head coach — graceful degradation */}
           {sim.metrics.audioQuality < 0.6 && (
             <div style={{
               padding: '9px 11px', background: 'var(--bg-inset)',
@@ -497,8 +487,8 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
             }}>
               <span style={{ color: 'var(--amber)', marginTop: 1 }}>{I('info', { size: 12 })}</span>
               <div style={{ fontSize: 11, color: 'var(--ink-1)', lineHeight: 1.4 }}>
-                <div style={{ fontWeight: 600, color: 'var(--ink-0)', marginBottom: 2 }}>Coaching paused</div>
-                Low audio quality — multi-speaker overlap detected. Cues will resume once signal stabilizes.
+                <div style={{ fontWeight: 600, color: 'var(--ink-0)', marginBottom: 2 }}>Head coach paused the team</div>
+                Low audio quality — multi-speaker overlap detected. Cues resume once signal stabilizes.
               </div>
             </div>
           )}
@@ -526,35 +516,22 @@ function GoalRow({ label, current, target, invert = false }) {
   );
 }
 
-// Small visual for Bales' IPA task vs socio-emotional balance
-function IPABalance({ taskRatio }) {
-  const task = Math.round(taskRatio * 100);
-  const socio = 100 - task;
-  const target = 65; // healthy task share
-  const dev = Math.abs(task - target);
-  const off = dev > 20;
+// Groups a set of dynamics metrics under a named coach persona.
+function CoachBlock({ name, scope, children }) {
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{
-        position: 'relative', height: 8, borderRadius: 4, overflow: 'hidden',
-        background: 'var(--bg-inset)', border: '1px solid var(--line-soft)',
+        display: 'flex', alignItems: 'baseline', gap: 8,
+        paddingBottom: 6, borderBottom: '1px solid var(--line-soft)',
       }}>
-        <div style={{
-          position: 'absolute', inset: 0, width: task + '%',
-          background: off ? 'var(--amber)' : 'var(--blue)',
-          transition: 'width 400ms var(--ease)',
-        }}/>
-        {/* target marker */}
-        <div style={{
-          position: 'absolute', top: -2, bottom: -2, left: target + '%',
-          width: 1, background: 'var(--ink-1)', opacity: 0.35,
-        }}/>
+        <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--ink-0)', letterSpacing: '-0.01em' }}>
+          {name}
+        </span>
+        <span style={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>
+          {scope}
+        </span>
       </div>
-      <div style={{ display: 'flex', marginTop: 4, fontSize: 10, color: 'var(--ink-2)' }} className="mono">
-        <span>task {task}%</span>
-        <div style={{ flex: 1 }}/>
-        <span>socio {socio}%</span>
-      </div>
+      {children}
     </div>
   );
 }

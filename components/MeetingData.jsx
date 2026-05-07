@@ -8,6 +8,29 @@ const PARTICIPANTS = [
   { id: 'mar', name: 'Marcus Bell',     color: 'oklch(0.75 0.12 310)', initials: 'MB', role: 'Eng' },
 ];
 
+// The coaching team. Six specialists plus a head coach that picks which
+// specialist gets the floor. Each nudge is attributed to one specialist.
+const COACHES = {
+  listening: { id: 'listening', name: 'Listening coach',     watches: 'You — talk/listen ratio, silence after points, whether you jump in.' },
+  clarity:   { id: 'clarity',   name: 'Clarity coach',       watches: 'You — filler words, sentence structure, whether your point lands.' },
+  influence: { id: 'influence', name: 'Influence coach',     watches: 'You — whether your contributions shape what comes next.' },
+  team:      { id: 'team',      name: 'Team dynamics coach', watches: 'The group — who is quiet, who is being talked over, safety signals.' },
+  tone:      { id: 'tone',      name: 'Tone coach',          watches: 'The room — emotional temperature, sentiment, linguistic synchrony.' },
+  outcomes:  { id: 'outcomes',  name: 'Outcomes coach',      watches: 'The arc — goal → reality → options → will, drift, time pressure.' },
+  head:      { id: 'head',      name: 'Head coach',          watches: 'The coaches — picks the 1–2 cues that matter, enforces your goal weights.' },
+};
+
+// Head coach applies these weights based on your active goal. +1 = this
+// coach gets louder (its cues score higher in the head coach's pick-2);
+// −1 = quieter. This is how "Improve listening" turns up the listening
+// coach and turns down the influence coach.
+const GOAL_COACH_WEIGHTS = {
+  listen:    { listening: +1, team: +0.5, influence: -0.5 },
+  assertive: { influence: +1, outcomes: +0.5, listening: -0.3 },
+  clarity:   { clarity:   +1, outcomes: +0.3 },
+  balance:   { listening: +1, team: +0.8, influence: -0.3 },
+};
+
 // Transcript script — (speakerId, text, t in seconds, optionalTags)
 const SCRIPT = [
   { t: 0,    s: 'you', txt: "Okay — let's walk through the Q2 roadmap. I've been thinking about this for a while and I want to share where my head's at before we open it up." },
@@ -30,66 +53,72 @@ const SCRIPT = [
 const NUDGE_SCRIPT = [
   { t: 18, id: 'n1',
     type: 'suggest',
+    coach: 'listening',
     title: "You've been speaking for 18s",
     detail: "You're framing the decision before hearing input. Consider opening the floor.",
     confidence: 0.78,
     tone: 'amber',
     signals: ['Talk ratio 92%', 'No questions asked yet', 'Pace +14% vs baseline'],
-    why: "ICF active listening · open-ended question would invite the 3 silent participants.",
+    why: "Three people haven't spoken yet. An open question now gets you their read before you're committed to a position.",
     action: { label: 'Suggest phrase', phrase: '"Before I go further — what are you each seeing?"' },
     duration: 14,
   },
   { t: 43, id: 'n2',
     type: 'critical',
-    title: "Interrupt detected — pause",
+    coach: 'listening',
+    title: "You cut Priya off — pause",
     detail: "You cut Priya off 0.4s in. This is the 3rd competitive overlap this week.",
     confidence: 0.94,
     tone: 'rose',
     signals: ['Competitive overlap (not backchannel)', 'Priya floor-time 0.4s', 'Pattern: 3× this week'],
-    why: "Psychological-safety risk. Repair now costs less than letting it compound.",
+    why: "Psychological-safety risk. Repair now costs less than letting it compound across meetings.",
     action: { label: 'Suggest repair', phrase: '"Sorry Priya — you were about to say something. Go ahead."' },
     duration: 12,
   },
   { t: 72, id: 'n3',
     type: 'insight',
-    title: "LSM dropping — misalignment",
-    detail: "Linguistic style matching fell from 0.72 → 0.50. Others aren't mirroring you.",
+    coach: 'tone',
+    title: "Alignment is slipping",
+    detail: "The room stopped mirroring your phrasing — a sign objections are landing but not being addressed.",
     confidence: 0.58,
     tone: 'blue',
-    signals: ['LSM Δ −0.22', 'Pronoun mirroring ↓', 'Function-word overlap weak'],
-    why: "Low LSM predicts disengagement. Paraphrase the last objection to re-establish rapport.",
+    signals: ['Style match 0.72 → 0.50', 'Pronoun mirroring ↓', 'Shared-word overlap weak'],
+    why: "When people stop adopting each other's language, disagreement is hardening. Paraphrase the last objection to re-anchor.",
     action: { label: 'Suggest phrase', phrase: '"So what I\'m hearing is the framing — not the bet itself — is the issue?"' },
     duration: 10,
   },
   { t: 98, id: 'n4',
     type: 'suggest',
+    coach: 'influence',
     title: "Acknowledge Marcus's constraint",
     detail: "Capacity objection unacknowledged for 6s. Acknowledge before redirecting.",
     confidence: 0.71,
     tone: 'amber',
-    signals: ['Task-oriented objection', 'Unacknowledged 6s', 'IPA equilibrium tilted task-heavy'],
-    why: "Bales IPA: socio-emotional ack before task-reply maintains team equilibrium.",
+    signals: ['Concrete objection raised', 'Unacknowledged 6s', 'Stacking new points on top'],
+    why: "Naming a constraint before pivoting shows you heard it. Skipping that step makes people repeat themselves or go quiet.",
     action: { label: 'Suggest phrase', phrase: '"That\'s a real constraint — thanks for flagging."' },
     duration: 8,
   },
   { t: 130, id: 'n5',
     type: 'insight',
+    coach: 'outcomes',
     title: "Opportunity to summarize",
     detail: "Discussion has converged. A quick summary will lock in the decision.",
     confidence: 0.83,
     tone: 'blue',
-    signals: ['Convergence detected', 'No new arguments 20s', 'GROW → Will phase'],
-    why: "GROW framework: move to 'Will' before momentum fades.",
+    signals: ['Convergence detected', 'No new arguments 20s', 'Ready to commit'],
+    why: "You've moved through goal, reality, and options. Name the decision now before the moment passes.",
     action: { label: 'Summarize', phrase: '"So — onboarding as the big bet, two-week search spike. Everyone aligned?"' },
     duration: 12,
   },
   { t: 155, id: 'n6',
     type: 'insight',
+    coach: 'listening',
     title: "Good recovery",
     detail: "You acknowledged the capacity point and folded it in. Talk ratio balanced.",
     confidence: 0.88,
     tone: 'green',
-    signals: ['Talk ratio 48%', 'LSM recovered to 0.81', 'Positive tone shift'],
+    signals: ['Talk ratio 48%', 'Alignment recovered to 0.81', 'Positive tone shift'],
     why: "Reinforcement — this pattern helps your 'Improve listening' goal.",
     action: null,
     duration: 8,
@@ -114,7 +143,7 @@ function fmtTime(s) {
 }
 
 // Hook — returns current meeting simulation state
-function useMeetingSim({ running, speed = 1, startAt = 0 }) {
+function useMeetingSim({ running, speed = 1, startAt = 0, activeGoal = 'listen' }) {
   const [t, setT] = React.useState(startAt);
   const [dismissed, setDismissed] = React.useState(new Set());
   const rafRef = React.useRef();
@@ -134,10 +163,26 @@ function useMeetingSim({ running, speed = 1, startAt = 0 }) {
   // transcript up to t
   const transcript = SCRIPT.filter(l => l.t <= t);
 
-  // active nudges — within duration window
-  const activeNudges = NUDGE_SCRIPT.filter(n =>
+  // Candidate cues inside the current time window and not dismissed.
+  const candidates = NUDGE_SCRIPT.filter(n =>
     t >= n.t && t <= n.t + n.duration && !dismissed.has(n.id)
   );
+
+  // Head coach: hard cap of 2 simultaneous cues. Priority = urgency tier
+  // (rose > amber > blue > green) + confidence, modulated by active-goal
+  // weights so the coach tied to your goal gets louder.
+  const toneRank = { rose: 300, amber: 200, blue: 100, green: 50 };
+  const goalWeights = GOAL_COACH_WEIGHTS[activeGoal] || {};
+  const activeNudges = candidates
+    .map(n => ({
+      n,
+      score: (toneRank[n.tone] || 0)
+           + n.confidence * 100
+           + (goalWeights[n.coach] || 0) * 40,
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 2)
+    .map(x => x.n);
 
   // recent history of nudges (for feed)
   const nudgeHistory = NUDGE_SCRIPT.filter(n => t >= n.t).slice().reverse();
@@ -248,5 +293,6 @@ function deriveMetrics(transcript, t) {
 }
 
 window.MeetingData = {
-  PARTICIPANTS, SCRIPT, NUDGE_SCRIPT, TIMELINE_EVENTS, fmtTime, useMeetingSim,
+  PARTICIPANTS, SCRIPT, NUDGE_SCRIPT, TIMELINE_EVENTS, COACHES, GOAL_COACH_WEIGHTS,
+  fmtTime, useMeetingSim,
 };
