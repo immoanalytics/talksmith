@@ -160,13 +160,65 @@ button { font-family: inherit; color: inherit; }
   }
 }
 
+/* Keyboard focus ring. Many of our buttons are icon-only and rely on inline
+   styles, so a single focus-visible rule covers them all without per-button
+   work. Inset to read on both --bg-1 panels and --bg-inset rails. */
+:focus { outline: none; }
+button:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Containment: each scrolling panel is its own layout/paint root. A new
+   transcript line or a dynamics tick can't invalidate layout in the rest
+   of the app. Cheap to add, real win when a meeting is active. */
+.scroll { contain: layout style paint; }
+
+/* Boot skeleton — visible before React mounts so the first paint isn't a
+   white flash. React's createRoot replaces #root's children, removing this. */
+.ts-boot {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 14px;
+  background: var(--bg-0); color: var(--ink-1);
+  font-family: var(--font-sans);
+}
+.ts-boot__mark {
+  font-size: 15px; font-weight: 600; letter-spacing: -0.01em;
+  color: var(--ink-0);
+}
+.ts-boot__bar {
+  width: 120px; height: 2px;
+  background: var(--line); border-radius: 2px; overflow: hidden;
+  position: relative;
+}
+.ts-boot__bar::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, var(--blue), transparent);
+  animation: tsBootSlide 1.4s ease-in-out infinite;
+}
+.ts-boot__hint { font-size: 11px; color: var(--ink-3); font-family: var(--font-mono); }
+@keyframes tsBootSlide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%);  }
+}
+
 </style>
 <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 </head>
 <body>
-<div id="root"></div>
+<div id="root">
+  <div class="ts-boot" aria-hidden="true">
+    <div class="ts-boot__mark">Talksmith</div>
+    <div class="ts-boot__bar"></div>
+    <div class="ts-boot__hint">tuning the coaches…</div>
+  </div>
+</div>
 
 <script type="text/babel" data-presets="react">
 
@@ -341,7 +393,7 @@ function BrandMark({ size = 18 }) {
 function IconButton({ children, tip, onClick, active, danger, size = 28 }) {
   const [hover, setHover] = React.useState(false);
   return (
-    <button onClick={onClick}
+    <button onClick={onClick} aria-label={tip} aria-pressed={active ? true : undefined}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       title={tip} style={{
         width: size, height: size,
@@ -604,7 +656,10 @@ function fmtTime(s) {
 // transcript/nudge transitions.
 function useMeetingSim({ running, speed = 1, startAt = 0, activeGoal = 'listen' }) {
   const [t, setT] = React.useState(startAt);
-  const [dismissed, setDismissed] = React.useState(() => new Set());
+  // suppressed: id -> { mode: 'dismiss' } | { mode: 'snooze', until: number }.
+  // Dismiss is permanent for the meeting; snooze hides the cue until t passes
+  // `until`, then it becomes eligible to surface again.
+  const [suppressed, setSuppressed] = React.useState(() => new Map());
 
   React.useEffect(() => {
     if (!running) return;
@@ -612,8 +667,8 @@ function useMeetingSim({ running, speed = 1, startAt = 0, activeGoal = 'listen' 
       setT(prev => {
         const next = prev + 0.1 * speed;
         if (next > 175) {
-          // Meeting looped — let dismissed cues come back so a re-watch isn't muted.
-          setDismissed(new Set());
+          // Meeting looped — let suppressed cues come back so a re-watch isn't muted.
+          setSuppressed(new Map());
           return 0;
         }
         return next;
@@ -642,10 +697,15 @@ function useMeetingSim({ running, speed = 1, startAt = 0, activeGoal = 'listen' 
     [t]
   );
   const candidates = React.useMemo(
-    () => NUDGE_SCRIPT.filter(n =>
-      t >= n.t && t <= n.t + n.duration && !dismissed.has(n.id)
-    ),
-    [candidateIds, dismissed] // eslint-disable-line react-hooks/exhaustive-deps
+    () => NUDGE_SCRIPT.filter(n => {
+      if (!(t >= n.t && t <= n.t + n.duration)) return false;
+      const s = suppressed.get(n.id);
+      if (!s) return true;
+      if (s.mode === 'dismiss') return false;
+      if (s.mode === 'snooze') return s.until <= t;
+      return true;
+    }),
+    [candidateIds, suppressed, t] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Head coach: hard cap of 2 simultaneous cues. Priority = urgency tier
@@ -694,13 +754,22 @@ function useMeetingSim({ running, speed = 1, startAt = 0, activeGoal = 'listen' 
     [transcript, t, langCounts]
   );
 
+  // Default snooze: 2 minutes of meeting time, matching the head-coach
+  // policy that no cue should re-fire faster than the user can change behavior.
+  const SNOOZE_SECS = 120;
+
   return {
     t, setT,
     transcript,
     activeNudges,
     nudgeHistory,
     metrics,
-    dismissNudge: (id) => setDismissed(prev => new Set(prev).add(id)),
+    dismissNudge: (id) => setSuppressed(prev => {
+      const next = new Map(prev); next.set(id, { mode: 'dismiss' }); return next;
+    }),
+    snoozeNudge: (id) => setSuppressed(prev => {
+      const next = new Map(prev); next.set(id, { mode: 'snooze', until: t + SNOOZE_SECS }); return next;
+    }),
     participants: PARTICIPANTS,
     timelineEvents: TIMELINE_EVENTS,
     totalDuration: 175,
@@ -851,7 +920,7 @@ function Nudge({ nudge, onDismiss, onSnooze, variant = 'card', compact = false }
             fontSize: 11, fontWeight: 500, cursor: 'pointer', padding: 0,
           }}>{nudge.action.label} →</button>
         )}
-        <button onClick={() => onDismiss?.(nudge.id)} style={{
+        <button onClick={() => onDismiss?.(nudge.id)} aria-label="Dismiss cue" title="Dismiss" style={{
           border: 'none', background: 'transparent', color: 'var(--ink-2)',
           cursor: 'pointer', padding: 0, display: 'grid', placeItems: 'center',
         }}>{I('x', { size: 11 })}</button>
@@ -896,7 +965,7 @@ function Nudge({ nudge, onDismiss, onSnooze, variant = 'card', compact = false }
             }}>{nudge.action.phrase}</div>
           )}
         </div>
-        <button onClick={() => onDismiss?.(nudge.id)} style={{
+        <button onClick={() => onDismiss?.(nudge.id)} aria-label="Dismiss cue" title="Dismiss" style={{
           border: 'none', background: 'transparent', color: 'var(--ink-2)',
           cursor: 'pointer', padding: 0, alignSelf: 'flex-start',
         }}>{I('x', { size: 12 })}</button>
@@ -1409,7 +1478,7 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
           active={sim.activeNudges}
           history={sim.nudgeHistory}
           onDismiss={sim.dismissNudge}
-          onSnooze={sim.dismissNudge}
+          onSnooze={sim.snoozeNudge}
           variant={variant}
           muted={muted}
         />
@@ -2551,8 +2620,19 @@ function loadPref(key, fallback) {
   } catch { return fallback; }
 }
 
+// First-run theme picks up the system preference; once the user picks a
+// theme in Tweaks it's pinned and the OS preference is ignored.
+function pickInitialTheme() {
+  const stored = loadPref('talksmith.theme', null);
+  if (stored === 'dark' || stored === 'light') return stored;
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }
+  return TWEAKS.theme;
+}
+
 function App() {
-  const [theme, setTheme] = React.useState(() => loadPref('talksmith.theme', TWEAKS.theme));
+  const [theme, setTheme] = React.useState(pickInitialTheme);
   const [nudgeStyle, setNudgeStyle] = React.useState(() => loadPref('talksmith.nudgeStyle', TWEAKS.nudgeStyle));
   const [showTweaks, setShowTweaks] = React.useState(false);
   const [editMode, setEditMode] = React.useState(false);
@@ -2590,6 +2670,12 @@ function App() {
     participants: MeetingData.PARTICIPANTS,
   }), [reviewT, sim]);
 
+  // Keyboard handler binds once. The screen value is read through a ref so
+  // we don't tear down/rebuild the listener on every navigation, and so the
+  // Space-bar branch always sees the freshest screen.
+  const screenRef = React.useRef(screen);
+  React.useEffect(() => { screenRef.current = screen; }, [screen]);
+
   React.useEffect(() => {
     const onKey = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -2600,14 +2686,15 @@ function App() {
         if (e.key === '4') { setScreen('profile'); e.preventDefault(); }
         if (e.key.toLowerCase() === 'm') { setMuted(m => !m); e.preventDefault(); }
       } else if (e.key === ' ') {
-        if (screen === 'live' || screen === 'overlay') setRunning(r => !r);
-        if (screen === 'review') setReviewPlaying(p => !p);
+        const cur = screenRef.current;
+        if (cur === 'live' || cur === 'overlay') setRunning(r => !r);
+        if (cur === 'review') setReviewPlaying(p => !p);
         e.preventDefault();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [screen]);
+  }, []);
 
   React.useEffect(() => {
     const onMsg = (e) => {
@@ -2811,7 +2898,7 @@ function TweaksPanel({ theme, setTheme, nudgeStyle, setNudgeStyle, onClose, edit
         <span className="eyebrow">Tweaks</span>
         <div style={{ flex: 1 }}/>
         {!editMode && (
-          <button onClick={onClose} style={{
+          <button onClick={onClose} aria-label="Close tweaks panel" title="Close" style={{
             border: 'none', background: 'transparent', color: 'var(--ink-2)',
             cursor: 'pointer', padding: 2, display: 'grid', placeItems: 'center',
           }}>{I('x', { size: 12 })}</button>
