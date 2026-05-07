@@ -147,6 +147,19 @@ button { font-family: inherit; color: inherit; }
   100% { background-position: 200px 0; }
 }
 
+/* Honor OS-level motion preference. The pulse/edge/breathe loops carry
+   information (active state, high alert) but the motion itself isn't
+   essential — flatten to a still state for users who opt out. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 </style>
 <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
@@ -2528,26 +2541,44 @@ const TWEAKS = /*EDITMODE-BEGIN*/{
   "startScreen": "live"
 }/*EDITMODE-END*/;
 
+// Read a saved preference from localStorage with a fallback. SSR-safe and
+// resilient to localStorage being disabled (Safari private mode, etc).
+function loadPref(key, fallback) {
+  try {
+    if (typeof localStorage === 'undefined') return fallback;
+    const v = localStorage.getItem(key);
+    return v == null ? fallback : v;
+  } catch { return fallback; }
+}
+
 function App() {
-  const [theme, setTheme] = React.useState(TWEAKS.theme);
-  const [nudgeStyle, setNudgeStyle] = React.useState(TWEAKS.nudgeStyle);
+  const [theme, setTheme] = React.useState(() => loadPref('talksmith.theme', TWEAKS.theme));
+  const [nudgeStyle, setNudgeStyle] = React.useState(() => loadPref('talksmith.nudgeStyle', TWEAKS.nudgeStyle));
   const [showTweaks, setShowTweaks] = React.useState(false);
   const [editMode, setEditMode] = React.useState(false);
 
-  const stored = (typeof localStorage !== 'undefined' && localStorage.getItem('talksmith.screen')) || TWEAKS.startScreen;
-  const storedGoal = (typeof localStorage !== 'undefined' && localStorage.getItem('talksmith.goal')) || 'listen';
-  const [screen, setScreen] = React.useState(stored);
+  const [screen, setScreen] = React.useState(() => loadPref('talksmith.screen', TWEAKS.startScreen));
   const [running, setRunning] = React.useState(true);
   const [speed, setSpeed] = React.useState(1);
-  const [muted, setMuted] = React.useState(false);
+  const [muted, setMuted] = React.useState(() => loadPref('talksmith.muted', '0') === '1');
   const [idle, setIdle] = React.useState(false);
-  const [activeGoal, setActiveGoal] = React.useState(storedGoal);
+  const [activeGoal, setActiveGoal] = React.useState(() => loadPref('talksmith.goal', 'listen'));
 
   React.useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
-  React.useEffect(() => { localStorage.setItem('talksmith.screen', screen); }, [screen]);
-  React.useEffect(() => { localStorage.setItem('talksmith.goal', activeGoal); }, [activeGoal]);
+  React.useEffect(() => { try { localStorage.setItem('talksmith.theme', theme); } catch {} }, [theme]);
+  React.useEffect(() => { try { localStorage.setItem('talksmith.nudgeStyle', nudgeStyle); } catch {} }, [nudgeStyle]);
+  React.useEffect(() => { try { localStorage.setItem('talksmith.screen', screen); } catch {} }, [screen]);
+  React.useEffect(() => { try { localStorage.setItem('talksmith.goal', activeGoal); } catch {} }, [activeGoal]);
+  React.useEffect(() => { try { localStorage.setItem('talksmith.muted', muted ? '1' : '0'); } catch {} }, [muted]);
 
-  const sim = MeetingData.useMeetingSim({ running: running && !idle, speed, startAt: 48, activeGoal });
+  // Pause the live sim when the user isn't on a screen that consumes it.
+  // Profile/Review don't read sim state; ticking it is wasted work and the
+  // timecode is misleading anyway when you're not "in" the meeting.
+  const screenWantsSim = screen === 'live' || screen === 'overlay';
+  const sim = MeetingData.useMeetingSim({
+    running: running && !idle && screenWantsSim,
+    speed, startAt: 48, activeGoal,
+  });
 
   const [reviewT, setReviewT] = React.useState(42);
   const [reviewPlaying, setReviewPlaying] = React.useState(false);
