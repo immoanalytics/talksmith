@@ -298,7 +298,7 @@ function TitleBar({ title, subtitle, meetingState, onSettings, activeScreen, onS
     { id: 'profile', label: 'Profile', key: '4' },
   ];
   return (
-    <div style={{
+    <div data-testid="title-bar" style={{
       height: 44, flexShrink: 0,
       display: 'flex', alignItems: 'center',
       padding: '0 12px',
@@ -320,16 +320,19 @@ function TitleBar({ title, subtitle, meetingState, onSettings, activeScreen, onS
       </div>
 
       {/* Screen tabs */}
-      <div style={{ display: 'flex', gap: 2, background: 'var(--bg-inset)', padding: 2, borderRadius: 8, border: '1px solid var(--line-soft)' }}>
+      <div data-testid="screen-tabs" style={{ display: 'flex', gap: 2, background: 'var(--bg-inset)', padding: 2, borderRadius: 8, border: '1px solid var(--line-soft)' }}>
         {screens.map(s => (
-          <button key={s.id} onClick={() => onScreenChange(s.id)} style={{
-            border: 'none', background: activeScreen === s.id ? 'var(--bg-2)' : 'transparent',
-            color: activeScreen === s.id ? 'var(--ink-0)' : 'var(--ink-2)',
-            fontSize: 12, fontWeight: 500, padding: '4px 10px', borderRadius: 6,
-            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-            boxShadow: activeScreen === s.id ? 'var(--shadow-card)' : 'none',
-            transition: 'all var(--speed) var(--ease)',
-          }}>
+          <button key={s.id} onClick={() => onScreenChange(s.id)}
+            data-testid={`screen-tab-${s.id}`}
+            aria-pressed={activeScreen === s.id}
+            style={{
+              border: 'none', background: activeScreen === s.id ? 'var(--bg-2)' : 'transparent',
+              color: activeScreen === s.id ? 'var(--ink-0)' : 'var(--ink-2)',
+              fontSize: 12, fontWeight: 500, padding: '4px 10px', borderRadius: 6,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+              boxShadow: activeScreen === s.id ? 'var(--shadow-card)' : 'none',
+              transition: 'all var(--speed) var(--ease)',
+            }}>
             {s.label}
             <span className="mono" style={{ fontSize: 9, color: 'var(--ink-3)', padding: '1px 4px', border: '1px solid var(--line)', borderRadius: 3 }}>⌘{s.key}</span>
           </button>
@@ -354,7 +357,7 @@ function TitleBar({ title, subtitle, meetingState, onSettings, activeScreen, onS
                 }} />
                 <span style={{ color: 'var(--rose)', fontWeight: 500 }}>Listening</span>
                 <span style={{ color: 'var(--ink-2)' }}>·</span>
-                <span className="mono" style={{ color: 'var(--ink-1)' }}>{meetingState.timecode}</span>
+                <span data-testid="timecode" className="mono" style={{ color: 'var(--ink-1)' }}>{meetingState.timecode}</span>
               </>
             ) : (
               <>
@@ -372,7 +375,9 @@ function TitleBar({ title, subtitle, meetingState, onSettings, activeScreen, onS
       {/* Right */}
       <div style={{ display: 'flex', gap: 4 }}>
         <IconButton tip="Mute coaching (⌘M)">{I('bell', { size: 13 })}</IconButton>
-        <IconButton tip="Settings" onClick={onSettings}>{I('settings', { size: 13 })}</IconButton>
+        <span data-testid="settings-button">
+          <IconButton tip="Settings" onClick={onSettings}>{I('settings', { size: 13 })}</IconButton>
+        </span>
       </div>
     </div>
   );
@@ -643,6 +648,134 @@ const TIMELINE_EVENTS = [
   { t: 155, type: 'recovery',  label: 'Good recovery',    tone: 'green' },
 ];
 
+// Scenario library. Each scenario is a self-contained synthetic meeting that
+// exercises a different mix of coaches. Useful for both demoing the product
+// and as test fixtures — a Playwright smoke test can switch between scenarios
+// to verify the head coach surfaces the right specialist.
+//
+// To add a scenario: copy one of these blocks, give it a unique id, and add
+// at least 6 script lines + 1 nudge so the dynamics panel has data to read.
+const SCENARIOS = {
+  q2_roadmap: {
+    id: 'q2_roadmap',
+    name: 'Q2 roadmap sync',
+    summary: 'Pushback on a quarter; recovery after concessions',
+    duration: 175,
+    startAt: 48,
+    pplCount: 4,
+    participants: PARTICIPANTS,
+    script: SCRIPT,
+    nudges: NUDGE_SCRIPT,
+    timeline: TIMELINE_EVENTS,
+  },
+
+  tense_1on1: {
+    id: 'tense_1on1',
+    name: 'Skip-level feedback',
+    summary: 'Hard feedback delivered in person; tone coach is busy',
+    duration: 180,
+    startAt: 0,
+    pplCount: 2,
+    participants: [
+      { id: 'you', name: 'You',         color: 'oklch(0.72 0.14 250)', initials: 'YA', role: 'Director' },
+      { id: 'mar', name: 'Marcus Bell', color: 'oklch(0.75 0.12 310)', initials: 'MB', role: 'Eng' },
+    ],
+    script: [
+      { t: 0,    s: 'you', txt: "Hey Marcus — thanks for making time. I want to walk through the Q1 review feedback in person." },
+      { t: 12,   s: 'mar', txt: "Yeah. I read it last night. Some of it was hard to take." },
+      { t: 22,   s: 'you', txt: "I figured. I want to be honest with you — that's why I asked for the conversation, not Slack." },
+      { t: 36,   s: 'mar', txt: "I just don't agree with the read on the platform launch. We hit the dates. We hit the metrics." },
+      { t: 51,   s: 'you', txt: "You did. The feedback wasn't about the outcome — it was about how the team felt during the run-up." },
+      { t: 67,   s: 'mar', txt: "So because people felt stressed, that's a performance issue?" },
+      { t: 78,   s: 'you', txt: "It's a leadership signal. When good people stop wanting to be on a project, that's something we have to look at." },
+      { t: 98,   s: 'mar', txt: "I push hard because I care about the work. I don't really know how to do this differently." },
+      { t: 118,  s: 'you', txt: "I know, and I'm not asking you to care less. I'm asking you to read the room when the room is signaling." },
+      { t: 138,  s: 'mar', txt: "Okay. I can try that." },
+      { t: 152,  s: 'you', txt: "Let's not leave it at 'try'. Want to set a check-in two weeks out — agree on what reading the room looks like in practice?" },
+      { t: 170,  s: 'mar', txt: "Yeah, that'd help." },
+    ],
+    nudges: [
+      { t: 22, id: 'tn1', coach: 'listening', type: 'suggest',
+        title: "Pause — let it land",
+        detail: "He just said it was hard to read. Don't rush to reframe.",
+        confidence: 0.82, tone: 'amber',
+        signals: ['Acknowledgement gap < 1s', 'High-stakes opener'],
+        why: "When someone admits something cost them, silence is more validating than reassurance.",
+        action: { label: 'Suggest phrase', phrase: '"Yeah. I want you to know I get that — and that\'s why we\'re doing this here."' },
+        duration: 12,
+      },
+      { t: 67, id: 'tn2', coach: 'tone', type: 'critical',
+        title: "Tension just spiked",
+        detail: "Marcus moved from defending to challenging. Acknowledge before answering.",
+        confidence: 0.91, tone: 'rose',
+        signals: ['Pace +18%', 'Pitch variance ↑', 'Frame shifted to confrontation'],
+        why: "Answering a heated framing literally tends to escalate. Naming the temperature first usually de-escalates.",
+        action: { label: 'Suggest phrase', phrase: '"That\'s a fair pushback. Let me try to be more precise."' },
+        duration: 12,
+      },
+      { t: 98, id: 'tn3', coach: 'influence', type: 'insight',
+        title: "He just opened a door",
+        detail: "\"I don't know how to do this differently\" is a request, not a defense.",
+        confidence: 0.76, tone: 'blue',
+        signals: ['Self-disclosure marker', 'Affect softened'],
+        why: "Treating self-disclosure as an opening to coach (not an opportunity to win) is what turns a hard conversation into a productive one.",
+        action: { label: 'Suggest phrase', phrase: '"That\'s actually what I want us to figure out together."' },
+        duration: 14,
+      },
+      { t: 152, id: 'tn4', coach: 'outcomes', type: 'insight',
+        title: "Lock in the next step",
+        detail: "Don't let \"I'll try\" be the conclusion. Concrete commitment now.",
+        confidence: 0.84, tone: 'blue',
+        signals: ['Vague commitment detected', 'No follow-up scheduled'],
+        why: "Hard conversations fail at the close, not the middle. Pinning a date is what makes the change stick.",
+        action: { label: 'Summarize', phrase: '"Two weeks from today, 30 mins, three specific moments. Sound good?"' },
+        duration: 12,
+      },
+    ],
+    timeline: [
+      { t: 22,  type: 'pause',    label: 'Acknowledgement gap', tone: 'amber' },
+      { t: 67,  type: 'tone',     label: 'Tension spike',       tone: 'rose'  },
+      { t: 98,  type: 'opening',  label: 'Self-disclosure',     tone: 'blue'  },
+      { t: 152, type: 'commit',   label: 'Vague commitment',    tone: 'amber' },
+    ],
+  },
+
+  clear_decision: {
+    id: 'clear_decision',
+    name: 'Eng standup decision',
+    summary: 'Crisp decision; coach is mostly silent (empty-state demo)',
+    duration: 100,
+    startAt: 0,
+    pplCount: 4,
+    participants: PARTICIPANTS,
+    script: [
+      { t: 0,   s: 'you', txt: "Quick one — we need to decide on rollout cadence for the search rebuild." },
+      { t: 9,   s: 'mar', txt: "I'd suggest 5%, 25%, 50%, 100% — staged over two weeks." },
+      { t: 22,  s: 'pri', txt: "Two weeks gives us enough metric signal at each step." },
+      { t: 35,  s: 'dan', txt: "Works for design — I just need it landing before the design system migration." },
+      { t: 50,  s: 'you', txt: "Locked. Marcus owns the staging plan. Priya owns the metric checks at each step." },
+      { t: 68,  s: 'pri', txt: "Sounds good." },
+      { t: 74,  s: 'mar', txt: "I'll have the rollout plan in the doc by EOD." },
+    ],
+    nudges: [
+      { t: 70, id: 'cd1', coach: 'outcomes', type: 'insight',
+        title: "Clean meeting",
+        detail: "Decision committed in 60s. No drift, no circularity. This is the pattern.",
+        confidence: 0.92, tone: 'green',
+        signals: ['Decision in 60s', 'Owners assigned', 'Talk ratio balanced'],
+        why: "Reinforcement — short crisp meetings are a feature, not an absence of one.",
+        action: null,
+        duration: 14,
+        positive: true,
+      },
+    ],
+    timeline: [
+      { t: 50, type: 'decide', label: 'Decision committed', tone: 'green' },
+      { t: 68, type: 'align',  label: 'All aligned',        tone: 'green' },
+    ],
+  },
+};
+
 function fmtTime(s) {
   const m = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
@@ -654,19 +787,41 @@ function fmtTime(s) {
 // on boundary indices so they only recompute when something actually changed —
 // not on every 100ms tick. This keeps each tick at near-zero CPU outside of
 // transcript/nudge transitions.
-function useMeetingSim({ running, speed = 1, startAt = 0, activeGoal = 'listen' }) {
-  const [t, setT] = React.useState(startAt);
+function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', scenarioId = 'q2_roadmap' }) {
+  // Resolve the scenario once per render. The inner names shadow the
+  // module-level defaults so the existing references inside this hook
+  // (SCRIPT, NUDGE_SCRIPT, PARTICIPANTS) keep working without rewrite.
+  const scenario = SCENARIOS[scenarioId] || SCENARIOS.q2_roadmap;
+  const SCRIPT = scenario.script;
+  const NUDGE_SCRIPT = scenario.nudges;
+  const PARTICIPANTS = scenario.participants;
+  const TIMELINE_EVENTS = scenario.timeline;
+  const totalDuration = scenario.duration;
+  const effectiveStartAt = startAt != null ? startAt : (scenario.startAt ?? 0);
+
+  const [t, setT] = React.useState(effectiveStartAt);
   // suppressed: id -> { mode: 'dismiss' } | { mode: 'snooze', until: number }.
   // Dismiss is permanent for the meeting; snooze hides the cue until t passes
   // `until`, then it becomes eligible to surface again.
   const [suppressed, setSuppressed] = React.useState(() => new Map());
+
+  // Reset the clock and clear suppressed cues whenever the user picks a
+  // different scenario from the Tweaks panel.
+  const lastScenario = React.useRef(scenarioId);
+  React.useEffect(() => {
+    if (lastScenario.current !== scenarioId) {
+      lastScenario.current = scenarioId;
+      setT(effectiveStartAt);
+      setSuppressed(new Map());
+    }
+  }, [scenarioId, effectiveStartAt]);
 
   React.useEffect(() => {
     if (!running) return;
     const id = setInterval(() => {
       setT(prev => {
         const next = prev + 0.1 * speed;
-        if (next > 175) {
+        if (next > totalDuration) {
           // Meeting looped — let suppressed cues come back so a re-watch isn't muted.
           setSuppressed(new Map());
           return 0;
@@ -675,7 +830,7 @@ function useMeetingSim({ running, speed = 1, startAt = 0, activeGoal = 'listen' 
       });
     }, 100);
     return () => clearInterval(id);
-  }, [running, speed]);
+  }, [running, speed, totalDuration]);
 
   // Transcript: stable until we cross a script line boundary.
   const transcriptCount = React.useMemo(() => {
@@ -750,8 +905,8 @@ function useMeetingSim({ running, speed = 1, startAt = 0, activeGoal = 'listen' 
   }, [transcript]);
 
   const metrics = React.useMemo(
-    () => deriveMetrics(transcript, t, langCounts),
-    [transcript, t, langCounts]
+    () => deriveMetrics(transcript, t, langCounts, PARTICIPANTS),
+    [transcript, t, langCounts, PARTICIPANTS]
   );
 
   // Default snooze: 2 minutes of meeting time, matching the head-coach
@@ -772,20 +927,21 @@ function useMeetingSim({ running, speed = 1, startAt = 0, activeGoal = 'listen' 
     }),
     participants: PARTICIPANTS,
     timelineEvents: TIMELINE_EVENTS,
-    totalDuration: 175,
+    totalDuration,
+    scenario,
     tc: fmtTime(t),
   };
 }
 
-function deriveMetrics(transcript, t, langCounts) {
+function deriveMetrics(transcript, t, langCounts, participants = PARTICIPANTS) {
   // Talk time per participant (approximated by words in their lines)
   const times = {};
-  PARTICIPANTS.forEach(p => times[p.id] = 0);
+  participants.forEach(p => times[p.id] = 0);
   transcript.forEach(l => {
     times[l.s] = (times[l.s] || 0) + l.txt.split(/\s+/).length * 0.35;
   });
   const total = Object.values(times).reduce((a, b) => a + b, 0) || 1;
-  const talkRatio = PARTICIPANTS.map(p => ({
+  const talkRatio = participants.map(p => ({
     ...p,
     seconds: times[p.id],
     pct: Math.round((times[p.id] / total) * 100),
@@ -863,8 +1019,9 @@ function deriveMetrics(transcript, t, langCounts) {
 }
 
 window.MeetingData = {
-  PARTICIPANTS, SCRIPT, NUDGE_SCRIPT, TIMELINE_EVENTS, COACHES, GOAL_COACH_WEIGHTS,
-  fmtTime, useMeetingSim,
+  PARTICIPANTS, SCRIPT, NUDGE_SCRIPT, TIMELINE_EVENTS,
+  COACHES, GOAL_COACH_WEIGHTS, SCENARIOS,
+  fmtTime, useMeetingSim, deriveMetrics,
 };
 
 
@@ -1344,9 +1501,12 @@ function GuidanceStream({ active, history, onDismiss, onSnooze, variant, muted }
             <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>No active cues</div>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div data-testid="active-cues" data-active-count={active.length}
+            style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {active.map(n => (
-              <Nudge key={n.id} nudge={n} onDismiss={onDismiss} onSnooze={onSnooze} variant={variant}/>
+              <div key={n.id} data-testid="active-cue" data-cue-id={n.id} data-cue-coach={n.coach}>
+                <Nudge nudge={n} onDismiss={onDismiss} onSnooze={onSnooze} variant={variant}/>
+              </div>
             ))}
           </div>
         )}
@@ -2643,6 +2803,10 @@ function App() {
   const [muted, setMuted] = React.useState(() => loadPref('talksmith.muted', '0') === '1');
   const [idle, setIdle] = React.useState(false);
   const [activeGoal, setActiveGoal] = React.useState(() => loadPref('talksmith.goal', 'listen'));
+  const [scenarioId, setScenarioId] = React.useState(() => {
+    const v = loadPref('talksmith.scenario', 'q2_roadmap');
+    return MeetingData.SCENARIOS[v] ? v : 'q2_roadmap';
+  });
 
   React.useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
   React.useEffect(() => { try { localStorage.setItem('talksmith.theme', theme); } catch {} }, [theme]);
@@ -2650,6 +2814,7 @@ function App() {
   React.useEffect(() => { try { localStorage.setItem('talksmith.screen', screen); } catch {} }, [screen]);
   React.useEffect(() => { try { localStorage.setItem('talksmith.goal', activeGoal); } catch {} }, [activeGoal]);
   React.useEffect(() => { try { localStorage.setItem('talksmith.muted', muted ? '1' : '0'); } catch {} }, [muted]);
+  React.useEffect(() => { try { localStorage.setItem('talksmith.scenario', scenarioId); } catch {} }, [scenarioId]);
 
   // Pause the live sim when the user isn't on a screen that consumes it.
   // Profile/Review don't read sim state; ticking it is wasted work and the
@@ -2657,7 +2822,7 @@ function App() {
   const screenWantsSim = screen === 'live' || screen === 'overlay';
   const sim = MeetingData.useMeetingSim({
     running: running && !idle && screenWantsSim,
-    speed, startAt: 48, activeGoal,
+    speed, activeGoal, scenarioId,
   });
 
   const [reviewT, setReviewT] = React.useState(42);
@@ -2729,8 +2894,8 @@ function App() {
       }}>
         {screen === 'live' && (
           <>
-            <Chip tone="neutral">Q2 roadmap sync</Chip>
-            <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>Thu · 2:00 PM · 30m scheduled</span>
+            <span data-testid="active-scenario-name"><Chip tone="neutral">{sim.scenario.name}</Chip></span>
+            <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{sim.scenario.summary}</span>
             <div style={{ flex: 1 }}/>
             <button onClick={() => setIdle(i => !i)} style={subBtn(idle)}>
               {idle ? 'Start meeting' : 'Idle state'}
@@ -2802,6 +2967,7 @@ function App() {
         <TweaksPanel
           theme={theme} setTheme={(v) => { setTheme(v); persist('theme', v); }}
           nudgeStyle={nudgeStyle} setNudgeStyle={(v) => { setNudgeStyle(v); persist('nudgeStyle', v); }}
+          scenarioId={scenarioId} setScenarioId={setScenarioId}
           onClose={() => { setShowTweaks(false); }}
           editMode={editMode}
         />
@@ -2883,10 +3049,12 @@ function IdleState({ onStart }) {
   );
 }
 
-function TweaksPanel({ theme, setTheme, nudgeStyle, setNudgeStyle, onClose, editMode }) {
+function TweaksPanel({ theme, setTheme, nudgeStyle, setNudgeStyle, scenarioId, setScenarioId, onClose, editMode }) {
+  const scenarios = MeetingData.SCENARIOS;
+  const activeScenario = scenarios[scenarioId];
   return (
-    <div style={{
-      position: 'fixed', bottom: 40, left: 20, width: 240,
+    <div data-testid="tweaks-panel" style={{
+      position: 'fixed', bottom: 40, left: 20, width: 260,
       background: 'var(--bg-1)', border: '1px solid var(--line-strong)',
       borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-pop)', zIndex: 100,
       animation: 'fadeUp 200ms var(--ease) both',
@@ -2905,6 +3073,30 @@ function TweaksPanel({ theme, setTheme, nudgeStyle, setNudgeStyle, onClose, edit
         )}
       </div>
       <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {setScenarioId && (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--ink-1)', marginBottom: 5 }}>Scenario</div>
+            <select
+              data-testid="scenario-picker"
+              value={scenarioId}
+              onChange={(e) => setScenarioId(e.target.value)}
+              style={{
+                width: '100%', fontFamily: 'inherit', fontSize: 11.5, padding: '5px 8px',
+                background: 'var(--bg-inset)', color: 'var(--ink-0)',
+                border: '1px solid var(--line)', borderRadius: 5, cursor: 'pointer',
+              }}
+            >
+              {Object.values(scenarios).map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            {activeScenario && (
+              <div style={{ fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.4 }}>
+                {activeScenario.summary}
+              </div>
+            )}
+          </div>
+        )}
         <div>
           <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--ink-1)', marginBottom: 5 }}>Theme</div>
           <div style={{ display: 'flex', gap: 4 }}>
