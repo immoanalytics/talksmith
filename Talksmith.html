@@ -867,22 +867,34 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
     [candidateIds, suppressed, t, scenarioId] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  // Head coach: hard cap of 2 simultaneous cues. Priority = urgency tier
-  // (rose > amber > blue > green) + confidence, modulated by active-goal
-  // weights so the coach tied to your goal gets louder.
+  // Head coach: hard cap of 2 simultaneous cues. Priority blends urgency tier
+  // (rose > amber > blue > green), the cue's projected impact (impact over
+  // frequency, per the research), confidence, and the active-goal weight so
+  // the coach tied to your goal gets louder. It also surfaces at most one cue
+  // per specialist coach at a time, so the stream stays varied rather than
+  // letting a single noisy coach take both slots.
   const activeNudges = React.useMemo(() => {
     const toneRank = { rose: 300, amber: 200, blue: 100, green: 50 };
     const goalWeights = GOAL_COACH_WEIGHTS[activeGoal] || {};
-    return candidates
+    const ranked = candidates
       .map(n => ({
         n,
         score: (toneRank[n.tone] || 0)
+             + nudgeImpact(n) * 120
              + n.confidence * 100
              + (goalWeights[n.coach] || 0) * 40,
       }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 2)
-      .map(x => x.n);
+      .sort((a, b) => b.score - a.score);
+
+    const picked = [];
+    const coachesSeen = new Set();
+    for (const { n } of ranked) {
+      if (picked.length >= 2) break;
+      if (coachesSeen.has(n.coach)) continue; // one cue per coach
+      coachesSeen.add(n.coach);
+      picked.push(n);
+    }
+    return picked;
   }, [candidates, activeGoal]);
 
   // History grows only when t crosses a nudge's start time, or when the
@@ -896,22 +908,18 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
     [historyCount, scenarioId] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  // Metrics: split heavy work. Language regex pass only re-runs when the
-  // transcript itself grows; t-dependent curves recompute every tick but
-  // are cheap arithmetic.
-  const langCounts = React.useMemo(() => {
-    let socio = 0;
-    for (const l of transcript) {
-      if (/\b(thanks|fair|got it|i hear you|yeah|i'm in|works for|sorry)\b/i.test(l.txt)) {
-        socio++;
-      }
-    }
-    return { socio, task: transcript.length - socio };
-  }, [transcript]);
+  // Metrics: split heavy work. The text analysis only re-runs when the
+  // transcript actually grows; t-dependent curves recompute every tick but
+  // are cheap arithmetic. analyzeTranscript also backs the post-meeting
+  // scores, so the live readouts and the Review screen stay consistent.
+  const analysis = React.useMemo(
+    () => analyzeTranscript(transcript, PARTICIPANTS, 'you'),
+    [transcript, PARTICIPANTS]
+  );
 
   const metrics = React.useMemo(
-    () => deriveMetrics(transcript, t, langCounts, PARTICIPANTS),
-    [transcript, t, langCounts, PARTICIPANTS]
+    () => deriveMetrics(transcript, t, analysis, PARTICIPANTS),
+    [transcript, t, analysis, PARTICIPANTS]
   );
 
   // Default snooze: 2 minutes of meeting time, matching the head-coach
@@ -938,12 +946,15 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
   };
 }
 
-function deriveMetrics(transcript, t, langCounts, participants = PARTICIPANTS) {
-  // Talk time per participant (approximated by words in their lines)
+function deriveMetrics(transcript, t, analysis, participants = PARTICIPANTS) {
+  // Talk time per participant. Estimate seconds from a speaking-rate constant
+  // (words / wpm) rather than a flat per-word factor, which tracks real
+  // delivery better and keeps the live bar consistent with the score engine.
   const times = {};
   participants.forEach(p => times[p.id] = 0);
   transcript.forEach(l => {
-    times[l.s] = (times[l.s] || 0) + l.txt.split(/\s+/).length * 0.35;
+    const secs = (l.txt.trim().split(/\s+/).filter(Boolean).length / SPEAK_WPM) * 60;
+    times[l.s] = (times[l.s] || 0) + secs;
   });
   const total = Object.values(times).reduce((a, b) => a + b, 0) || 1;
   const talkRatio = participants.map(p => ({
@@ -982,12 +993,26 @@ function deriveMetrics(transcript, t, langCounts, participants = PARTICIPANTS) {
     : lastWasQuestion ? (silenceGap < 6 ? 'thinking' : 'stalled')
     : (silenceGap < 3 ? 'pause' : 'dead-air');
 
-  // Task vs relational utterance balance — passed in from the memoized
-  // language pass so we don't re-scan the transcript every tick.
-  const socio = langCounts ? langCounts.socio : 0;
-  const task = langCounts ? langCounts.task : transcript.length;
+  // Task vs relational utterance balance — approximated from acknowledgement
+  // density in the analysis (relational markers) vs. everything else.
+  const socio = analysis ? Math.round(analysis.acknowledged + analysis.ackRatio * 2) : 0;
+  const task = Math.max(0, transcript.length - socio);
   const ipaTaskRatio = transcript.length ? task / transcript.length : 0.5;
   const ipaDeviation = Math.abs(ipaTaskRatio - 0.65);
+
+  // Live clarity / assertiveness readouts straight from the text analysis.
+  const fillerCount = analysis ? analysis.fillers : 0;
+  const fillerRate = analysis ? analysis.fillerRate : 0;
+  const hedgeCount = analysis ? analysis.hedges : 0;
+  const openQuestions = analysis ? analysis.openQuestions : 0;
+  const questionCount = analysis ? analysis.questionCount : 0;
+  const longestMonologueSec = analysis ? analysis.longestMonologueSec : 0;
+
+  // Psychological-safety read from interruption asymmetry: being talked over
+  // repeatedly (others→you) or doing the talking-over (you→others) both erode
+  // it. Balanced / quiet meetings read "healthy".
+  const intrDelta = (analysis ? analysis.youInterruptedOthers + analysis.othersInterruptedYou : 0);
+  const psychSafety = intrDelta === 0 ? 'healthy' : intrDelta === 1 ? 'watch' : 'at risk';
 
   // LSM (Linguistic Style Matching) — function-word overlap between You and others
   // Simulated smooth curve: high at start (monologue inflates), drops at 42 interrupt,
@@ -1019,14 +1044,230 @@ function deriveMetrics(transcript, t, langCounts, participants = PARTICIPANTS) {
     lsm,
     audioQuality,
     tension,
+    fillerCount, fillerRate, hedgeCount,
+    openQuestions, questionCount,
+    longestMonologueSec, psychSafety,
     yourTalkPct: talkRatio.find(p => p.id === 'you')?.pct ?? 0,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Scoring engine — turns a meeting transcript into explainable results.
+//
+// Everything here is deterministic and derived from the script text, so the
+// post-meeting scores genuinely change per scenario instead of being canned.
+// The same primitives back the live metrics, so live and review agree.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Words that dilute clarity when over-used.
+const RE_FILLER = /\b(um+|uh+|er+|ah+|like|you know|sort of|kinda|kind of|basically|literally|i mean|right\?)\b/gi;
+// Qualifiers that soften / hedge a statement (lower assertiveness).
+const RE_HEDGE  = /\b(maybe|perhaps|i think|i guess|i suppose|probably|possibly|might|just|a little|somewhat|kind of|sort of)\b/gi;
+// Markers that acknowledge another person's point.
+const RE_ACK    = /\b(thanks|that'?s fair|fair|good point|got it|i hear you|makes sense|i see|understood|appreciate|you'?re right|valid|sorry|hear you)\b/i;
+// Markers that signal an objection / pushback from another speaker.
+const RE_OBJECT = /\b(but |however|push ?back|disagree|not sure|concern|the issue|i'?d argue|that said|the problem|too (long|much|risky|big)|can'?t|won'?t|don'?t (agree|think))\b/i;
+// Markers that a decision / commitment is being made.
+const RE_DECIDE = /\b(let'?s|we'?ll|i'?ll (have|own|take)|owns?|locked|go with|decision|aligned|sounds good|works for|ship it|agree|i'?m in)\b/i;
+// Open question stems (invite elaboration) vs. closed (yes/no).
+const RE_OPEN_Q = /\b(what|how|why|tell me|walk me|help me understand|what if|which)\b/i;
+
+const SPEAK_WPM = 145; // average speaking rate, for word→seconds estimates
+
+function wordCount(text) {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+function countMatches(text, re) {
+  const m = text.match(re);
+  return m ? m.length : 0;
+}
+function clamp(v, lo = 0, hi = 100) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+// Analyze a full transcript for one speaker (default "you") and the group.
+// Returns a flat bag of structured signals other functions turn into scores.
+function analyzeTranscript(script, participants, meId = 'you') {
+  const lines = script || [];
+  const mine = lines.filter(l => l.s === meId);
+  const others = lines.filter(l => l.s !== meId);
+
+  const wordsBySpeaker = {};
+  for (const p of participants) wordsBySpeaker[p.id] = 0;
+  for (const l of lines) wordsBySpeaker[l.s] = (wordsBySpeaker[l.s] || 0) + wordCount(l.txt);
+
+  const yourWords = wordsBySpeaker[meId] || 0;
+  const totalWords = Object.values(wordsBySpeaker).reduce((a, b) => a + b, 0) || 1;
+  const talkPct = Math.round((yourWords / totalWords) * 100);
+
+  // Clarity inputs (your speech only).
+  const yourText = mine.map(l => l.txt).join(' ');
+  const fillers = countMatches(yourText, RE_FILLER);
+  const hedges = countMatches(yourText, RE_HEDGE);
+  const fillerRate = (fillers / Math.max(1, yourWords)) * 100; // per 100 words
+  const hedgeRate = (hedges / Math.max(1, yourWords)) * 100;
+  const avgTurnWords = mine.length ? yourWords / mine.length : 0;
+
+  // Questions you asked, split open vs. closed.
+  const yourQuestions = mine.filter(l => l.txt.includes('?'));
+  const openQuestions = yourQuestions.filter(l => RE_OPEN_Q.test(l.txt)).length;
+  const questionCount = yourQuestions.length;
+
+  // Objections raised by others, and whether you acknowledged within 2 turns.
+  let objections = 0, acknowledged = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].s !== meId && RE_OBJECT.test(lines[i].txt)) {
+      objections++;
+      for (let j = i + 1; j <= i + 3 && j < lines.length; j++) {
+        if (lines[j].s === meId && RE_ACK.test(lines[j].txt)) { acknowledged++; break; }
+      }
+    }
+  }
+  const ackRatio = objections ? acknowledged / objections : 1;
+
+  // Interruption asymmetry. An `interrupted` line was cut off (the victim);
+  // the next line's speaker is the interrupter.
+  let youInterruptedOthers = 0, othersInterruptedYou = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].interrupted) continue;
+    const victim = lines[i].s;
+    const interrupter = lines[i + 1] && lines[i + 1].s;
+    if (interrupter === meId && victim !== meId) youInterruptedOthers++;
+    if (victim === meId && interrupter && interrupter !== meId) othersInterruptedYou++;
+  }
+
+  // Longest unbroken stretch of you talking, in estimated seconds.
+  let runWords = 0, longestRunWords = 0;
+  for (const l of lines) {
+    if (l.s === meId) { runWords += wordCount(l.txt); longestRunWords = Math.max(longestRunWords, runWords); }
+    else runWords = 0;
+  }
+  const longestMonologueSec = Math.round((longestRunWords / SPEAK_WPM) * 60);
+
+  // Influence: decisions that land after you've spoken, and how often others
+  // pick up the thread right after your turns.
+  let decisions = 0, decisionsAfterYou = 0, responsesToYou = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (RE_DECIDE.test(lines[i].txt)) {
+      decisions++;
+      for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+        if (lines[j].s === meId) { decisionsAfterYou++; break; }
+      }
+    }
+    if (i > 0 && lines[i - 1].s === meId && lines[i].s !== meId) responsesToYou++;
+  }
+  const adoptedRatio = decisions ? decisionsAfterYou / decisions : 0;
+  const responseRate = mine.length ? Math.min(1, responsesToYou / mine.length) : 0;
+
+  // Group speaking balance — normalized entropy across speakers who spoke.
+  const shares = participants
+    .map(p => (wordsBySpeaker[p.id] || 0) / totalWords)
+    .filter(s => s > 0);
+  let entropy = 0;
+  for (const s of shares) entropy -= s * Math.log(s);
+  const maxEntropy = Math.log(Math.max(2, shares.length));
+  const speakerBalance = maxEntropy ? entropy / maxEntropy : 0;
+  const spokeCount = shares.length;
+
+  const durationSec = lines.length ? lines[lines.length - 1].t + 8 : 0;
+  const questionRate = durationSec ? questionCount / (durationSec / 60) : 0;
+
+  return {
+    meId, talkPct, yourWords, totalWords,
+    fillers, hedges, fillerRate, hedgeRate, avgTurnWords,
+    questionCount, openQuestions,
+    objections, acknowledged, ackRatio,
+    youInterruptedOthers, othersInterruptedYou,
+    longestMonologueSec,
+    decisions, decisionsAfterYou, adoptedRatio, responseRate,
+    speakerBalance, spokeCount, questionRate,
+    participantCount: participants.length,
+  };
+}
+
+// Turn an analysis into the four user-facing scores plus a composite grade.
+// Each score carries the concrete signals that produced it (explainability).
+function scoreFromAnalysis(a) {
+  const round = Math.round;
+
+  // Talk ratio is reported as-is; lower is better (target < 50%).
+  const talkRatio = a.talkPct;
+  const talkTone = talkRatio > 70 ? 'rose' : talkRatio > 55 ? 'amber' : 'green';
+
+  const clarity = round(clamp(
+    100 - a.fillerRate * 6 - a.hedgeRate * 3 - Math.max(0, a.avgTurnWords - 24) * 1.4
+  ));
+  const listening = round(clamp(
+    55 + a.ackRatio * 25 + (a.questionCount ? (a.openQuestions / a.questionCount) * 10 : 0)
+    - Math.max(0, a.talkPct - 50) * 0.8 - a.youInterruptedOthers * 10
+    - (a.objections - a.acknowledged) * 4
+  ));
+  const influence = round(clamp(
+    45 + a.adoptedRatio * 30 + a.responseRate * 18 - a.hedgeRate * 2.5
+    + (a.decisions ? 7 : 0)
+  ));
+  const engagement = round(clamp(
+    38 + a.speakerBalance * 38 + Math.min(1, a.questionRate / 2) * 14
+    + (a.spokeCount >= a.participantCount ? 10 : 0)
+  ));
+
+  // Composite: balance (from talk ratio) + the three skill scores.
+  const balance = clamp(100 - Math.max(0, a.talkPct - 50) * 2);
+  const overall = round(0.18 * balance + 0.27 * clarity + 0.27 * influence + 0.28 * listening);
+  const grade = overall >= 85 ? 'A' : overall >= 75 ? 'B' : overall >= 65 ? 'C' : overall >= 55 ? 'D' : 'E';
+
+  const pct = (x) => `${Math.round(x * 100)}%`;
+  return {
+    talkRatio, clarity, influence, listening, engagement, overall, grade,
+    tones: {
+      talkRatio: talkTone,
+      clarity: clarity >= 75 ? 'green' : clarity >= 60 ? 'amber' : 'rose',
+      influence: influence >= 70 ? 'green' : influence >= 55 ? 'amber' : 'rose',
+      listening: listening >= 70 ? 'green' : listening >= 55 ? 'amber' : 'rose',
+    },
+    signals: {
+      talkRatio: [
+        `You spoke ${a.talkPct}% (${a.spokeCount} of ${a.participantCount} spoke)`,
+        a.longestMonologueSec > 25 ? `Longest stretch ${a.longestMonologueSec}s uninterrupted` : `No long monologues`,
+      ],
+      clarity: [
+        `${a.fillers} filler${a.fillers === 1 ? '' : 's'} (${a.fillerRate.toFixed(1)}/100 words)`,
+        `${a.hedges} hedge${a.hedges === 1 ? '' : 's'}`,
+        `Avg ${Math.round(a.avgTurnWords)} words/turn`,
+      ],
+      influence: [
+        a.decisions ? `${a.decisionsAfterYou}/${a.decisions} decisions followed your turn` : `No decisions reached`,
+        `Others built on you ${pct(a.responseRate)} of your turns`,
+      ],
+      listening: [
+        a.objections ? `Acknowledged ${a.acknowledged}/${a.objections} objections` : `No objections raised`,
+        `${a.questionCount} question${a.questionCount === 1 ? '' : 's'} (${a.openQuestions} open)`,
+        a.youInterruptedOthers ? `You interrupted ${a.youInterruptedOthers}×` : `No interruptions by you`,
+      ],
+    },
+  };
+}
+
+// Convenience: score a whole scenario object.
+function scoreScenario(scenario) {
+  const a = analyzeTranscript(scenario.script, scenario.participants, 'you');
+  return { ...scoreFromAnalysis(a), analysis: a };
+}
+
+// Projected impact of a cue, 0–1. The head coach prioritizes impact over
+// frequency, so a high-impact critical cue outranks a stream of low-impact
+// ones. An explicit `impact` on the nudge wins; otherwise we infer from type.
+function nudgeImpact(n) {
+  if (typeof n.impact === 'number') return n.impact;
+  if (n.positive) return 0.3;            // reinforcement is nice-to-have
+  return { critical: 1, suggest: 0.65, insight: 0.5 }[n.type] ?? 0.5;
 }
 
 window.MeetingData = {
   PARTICIPANTS, SCRIPT, NUDGE_SCRIPT, TIMELINE_EVENTS,
   COACHES, GOAL_COACH_WEIGHTS, SCENARIOS,
   fmtTime, useMeetingSim, deriveMetrics,
+  analyzeTranscript, scoreFromAnalysis, scoreScenario, nudgeImpact,
 };
 
 
@@ -1686,12 +1927,54 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
               </div>
               <SilenceBar gap={sim.metrics.silenceGap} context={sim.metrics.silenceContext}/>
             </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <MetricTile
+                label="Longest run"
+                value={sim.metrics.longestMonologueSec}
+                suffix="s"
+                hint={sim.metrics.longestMonologueSec > 30 ? 'long — pause sooner' : 'healthy'}
+                color={sim.metrics.longestMonologueSec > 30 ? 'var(--amber)' : 'var(--ink-0)'}
+              />
+              <MetricTile
+                label="Questions"
+                value={sim.metrics.questionCount}
+                suffix={`· ${sim.metrics.openQuestions} open`}
+                hint={sim.metrics.questionCount === 0 ? 'invite input' : 'inviting input'}
+                color={sim.metrics.openQuestions > 0 ? 'var(--green)' : 'var(--ink-0)'}
+              />
+            </div>
+          </CoachBlock>
+
+          {/* Clarity coach — your delivery */}
+          <CoachBlock name="Clarity coach" scope="watching you">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <MetricTile
+                label="Filler words"
+                value={sim.metrics.fillerCount}
+                suffix={`· ${sim.metrics.fillerRate.toFixed(1)}/100w`}
+                hint={sim.metrics.fillerRate > 4 ? 'trim the filler' : 'clean delivery'}
+                color={sim.metrics.fillerRate > 4 ? 'var(--amber)' : 'var(--green)'}
+              />
+              <MetricTile
+                label="Hedging"
+                value={sim.metrics.hedgeCount}
+                suffix="phrases"
+                hint={sim.metrics.hedgeCount > 4 ? 'state it plainly' : 'assertive'}
+                color={sim.metrics.hedgeCount > 4 ? 'var(--amber)' : 'var(--ink-0)'}
+              />
+            </div>
           </CoachBlock>
 
           {/* Team dynamics coach — group health */}
           <CoachBlock name="Team dynamics coach" scope="watching the group">
             <div>
-              <div className="eyebrow" style={{ marginBottom: 6 }}>Who's talking over whom</div>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+                <span className="eyebrow">Who's talking over whom</span>
+                <div style={{ flex: 1 }}/>
+                <Chip tone={sim.metrics.psychSafety === 'healthy' ? 'green' : sim.metrics.psychSafety === 'watch' ? 'amber' : 'rose'} size="sm">
+                  safety: {sim.metrics.psychSafety}
+                </Chip>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                 <InterruptCell
                   label="you → others"
@@ -1701,7 +1984,7 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
                 <InterruptCell
                   label="others → you"
                   value={sim.metrics.othersInterruptedYou}
-                  tone="neutral"
+                  tone={sim.metrics.othersInterruptedYou > 0 ? 'amber' : 'neutral'}
                 />
               </div>
             </div>
@@ -1709,7 +1992,7 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
               label="Engagement"
               value={Math.round(sim.metrics.engagement * 100)}
               suffix="/100"
-              hint="3 speakers · active"
+              hint={`${sim.participants.length} participants`}
               color={sim.metrics.engagement > 0.6 ? 'var(--green)' : 'var(--ink-0)'}
             />
           </CoachBlock>
@@ -2066,8 +2349,10 @@ window.CompactOverlay = CompactOverlay;
 // Timeline scrub + synced transcript/insights + suggestions + scores
 
 function Review({ playing, onTogglePlay, t, setT, sim }) {
-  const total = sim.totalDuration;
-  const events = sim.timelineEvents;
+  const scenario = sim.scenario;
+  const total = scenario.duration;
+  const events = scenario.timeline;
+  const nudges = scenario.nudges;
 
   // Playback tick
   React.useEffect(() => {
@@ -2079,7 +2364,7 @@ function Review({ playing, onTogglePlay, t, setT, sim }) {
   }, [playing, total]);
 
   // Nudges up to current time for the insight column
-  const insightsUpTo = MeetingData.NUDGE_SCRIPT.filter(n => n.t <= t);
+  const insightsUpTo = nudges.filter(n => n.t <= t);
   const currentInsight = insightsUpTo[insightsUpTo.length - 1];
 
   return (
@@ -2091,7 +2376,7 @@ function Review({ playing, onTogglePlay, t, setT, sim }) {
     }}>
       {/* Top bar: scores */}
       <div style={{ gridColumn: '1 / -1' }}>
-        <ScoreBar metrics={deriveFinalScores(sim)}/>
+        <ScoreBar scenario={scenario}/>
       </div>
 
       {/* LEFT — Transcript synced */}
@@ -2106,12 +2391,12 @@ function Review({ playing, onTogglePlay, t, setT, sim }) {
             </span>
           </div>
         }>
-        <SyncedTranscript t={t} setT={setT}/>
+        <SyncedTranscript scenario={scenario} t={t} setT={setT}/>
       </Panel>
 
       {/* CENTER — Timeline + Insight */}
       <Panel eyebrow="Key moments" title="Timeline" dense>
-        <Timeline events={events} total={total} t={t} setT={setT}/>
+        <Timeline scenario={scenario} events={events} total={total} t={t} setT={setT}/>
         <div style={{ padding: '10px 14px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto' }} className="scroll">
           {currentInsight ? (
             <CurrentInsight nudge={currentInsight}/>
@@ -2150,7 +2435,12 @@ function Review({ playing, onTogglePlay, t, setT, sim }) {
       {/* RIGHT — "What you could have said" */}
       <Panel eyebrow="Coaching" title="What you could have said" dense>
         <div className="scroll" style={{ flex: 1, overflowY: 'auto', padding: '10px 14px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {MeetingData.NUDGE_SCRIPT.filter(n => n.action).map(n => (
+          {nudges.filter(n => n.action).length === 0 && (
+            <div style={{ padding: 20, color: 'var(--ink-2)', fontSize: 12, textAlign: 'center' }}>
+              No rewrite suggestions for this meeting — you handled the moments well.
+            </div>
+          )}
+          {nudges.filter(n => n.action).map(n => (
             <CoachCard key={n.id} nudge={n} active={Math.abs(t - n.t) < 3} onJump={() => setT(n.t)}/>
           ))}
 
@@ -2175,64 +2465,79 @@ function Review({ playing, onTogglePlay, t, setT, sim }) {
   );
 }
 
-function deriveFinalScores(sim) {
-  return {
-    talkRatio: 62,   // you
-    clarity: 78,
-    influence: 64,
-    listening: 54,
-    interruptions: 2,
-    duration: 175,
-  };
-}
-
-function ScoreBar({ metrics }) {
+function ScoreBar({ scenario }) {
+  // Real, scenario-derived scores. Memoized so we don't re-analyze the
+  // transcript on every playback tick.
+  const result = React.useMemo(() => MeetingData.scoreScenario(scenario), [scenario]);
+  const { signals, tones } = result;
   const scores = [
-    { k: 'Talk ratio', v: metrics.talkRatio, unit: '%', target: '<50', tone: metrics.talkRatio > 55 ? 'amber' : 'green', hint: 'You spoke 62% of the meeting vs. team avg 48%' },
-    { k: 'Clarity',     v: metrics.clarity, unit: '/100', target: '>75', tone: 'green', hint: 'Fewer filler words than last meeting (−18%)' },
-    { k: 'Influence',   v: metrics.influence, unit: '/100', target: '>70', tone: 'amber', hint: 'Your proposals led to 2/3 decisions adopted' },
-    { k: 'Listening',   v: metrics.listening, unit: '/100', target: '>70', tone: 'rose',  hint: 'Acknowledged only 1/3 objections raised' },
+    { k: 'Talk ratio', v: result.talkRatio, unit: '%',    target: '<50', tone: tones.talkRatio, hint: signals.talkRatio },
+    { k: 'Clarity',    v: result.clarity,   unit: '/100', target: '>75', tone: tones.clarity,   hint: signals.clarity },
+    { k: 'Influence',  v: result.influence, unit: '/100', target: '>70', tone: tones.influence, hint: signals.influence },
+    { k: 'Listening',  v: result.listening, unit: '/100', target: '>70', tone: tones.listening, hint: signals.listening },
   ];
+  const gradeTone = result.overall >= 75 ? 'green' : result.overall >= 60 ? 'amber' : 'rose';
   return (
-    <div style={{
+    <div data-testid="score-bar" style={{
       display: 'grid', gridTemplateColumns: 'repeat(4, 1fr) auto',
       gap: 1, background: 'var(--line)',
       border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)',
       overflow: 'hidden',
     }}>
       {scores.map((s, i) => (
-        <div key={i} title={s.hint} style={{ background: 'var(--bg-1)', padding: '12px 16px', cursor: 'help' }}>
+        <div key={i} data-testid={`score-${s.k.toLowerCase().replace(/\s+/g, '-')}`}
+          title={s.hint.join(' · ')}
+          style={{ background: 'var(--bg-1)', padding: '12px 16px', cursor: 'help' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
             <span className="eyebrow">{s.k}</span>
             <span style={{ fontSize: 9.5, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>target {s.target}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
-            <span className="mono" style={{
+            <span className="mono" data-testid={`score-value-${s.k.toLowerCase().replace(/\s+/g, '-')}`} style={{
               fontSize: 26, fontWeight: 600, letterSpacing: '-0.03em',
               color: `var(--${s.tone})`,
             }}>{s.v}</span>
             <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{s.unit}</span>
           </div>
           <div style={{ marginTop: 6 }}>
-            <Meter value={s.v} max={s.unit === '%' ? 100 : 100} color={`var(--${s.tone})`} height={3}/>
+            <Meter value={s.v} max={100} color={`var(--${s.tone})`} height={3}/>
+          </div>
+          {/* Top contributing signal, always visible (explainability) */}
+          <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.35 }}>
+            {s.hint[0]}
           </div>
         </div>
       ))}
-      <div style={{ background: 'var(--bg-1)', padding: '12px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3 }}>
-        <span className="eyebrow">Meeting</span>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>Q2 roadmap sync</div>
-        <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>
-          {MeetingData.fmtTime(metrics.duration)} · 4 participants
+      <div style={{ background: 'var(--bg-1)', padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3 }}>
+          <span className="eyebrow">Meeting</span>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{scenario.name}</div>
+          <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+            {MeetingData.fmtTime(scenario.duration)} · {scenario.participants.length} participants
+          </div>
+        </div>
+        {/* Composite grade */}
+        <div data-testid="meeting-grade" title={`Overall ${result.overall}/100`} style={{
+          width: 52, height: 52, borderRadius: 12, flexShrink: 0,
+          display: 'grid', placeItems: 'center',
+          background: `var(--${gradeTone}-soft)`,
+          border: `1px solid var(--${gradeTone}-line, var(--line))`,
+          color: `var(--${gradeTone})`,
+        }}>
+          <span className="mono" style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.03em' }}>
+            {result.grade}
+          </span>
         </div>
       </div>
     </div>
   );
 }
 
-function SyncedTranscript({ t, setT }) {
+function SyncedTranscript({ scenario, t, setT }) {
   const scrollRef = React.useRef();
   const activeRef = React.useRef();
-  const activeIdx = MeetingData.SCRIPT.findLastIndex(l => l.t <= t);
+  const script = scenario.script;
+  const activeIdx = script.findLastIndex(l => l.t <= t);
 
   React.useEffect(() => {
     if (activeRef.current && scrollRef.current) {
@@ -2246,8 +2551,8 @@ function SyncedTranscript({ t, setT }) {
     <div ref={scrollRef} className="scroll" style={{
       flex: 1, overflowY: 'auto', padding: '8px 16px 14px', minHeight: 0,
     }}>
-      {MeetingData.SCRIPT.map((l, i) => {
-        const speaker = MeetingData.PARTICIPANTS.find(p => p.id === l.s);
+      {script.map((l, i) => {
+        const speaker = scenario.participants.find(p => p.id === l.s);
         const active = i === activeIdx;
         const past = l.t < t;
         return (
@@ -2284,7 +2589,7 @@ function SyncedTranscript({ t, setT }) {
   );
 }
 
-function Timeline({ events, total, t, setT }) {
+function Timeline({ scenario, events, total, t, setT }) {
   const barRef = React.useRef();
   const handleClick = (e) => {
     const rect = barRef.current.getBoundingClientRect();
@@ -2301,10 +2606,10 @@ function Timeline({ events, total, t, setT }) {
     <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid var(--line-soft)' }}>
       {/* Speaker lanes */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 8 }}>
-        {MeetingData.PARTICIPANTS.map(p => {
-          const segments = MeetingData.SCRIPT.filter(l => l.s === p.id).map(l => ({
+        {scenario.participants.map(p => {
+          const segments = scenario.script.filter(l => l.s === p.id).map(l => ({
             start: l.t / total * 100,
-            width: Math.min(100, (l.txt.split(/\s+/).length * 0.35) / total * 100),
+            width: Math.min(100, (l.txt.split(/\s+/).length / 145 * 60) / total * 100),
           }));
           return (
             <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -2832,13 +3137,21 @@ function App() {
 
   const [reviewT, setReviewT] = React.useState(42);
   const [reviewPlaying, setReviewPlaying] = React.useState(false);
+  // The Review screen reads everything from the active scenario so it tracks
+  // the scenario picker just like Live does. Clamp the scrub head to the
+  // scenario duration so switching from a long to a short meeting can't leave
+  // the playhead past the end.
+  const reviewScenario = sim.scenario;
+  React.useEffect(() => {
+    setReviewT(prev => Math.min(prev, reviewScenario.duration));
+  }, [reviewScenario]);
   const reviewSim = React.useMemo(() => ({
     ...sim,
     t: reviewT, tc: MeetingData.fmtTime(reviewT),
-    totalDuration: 175,
-    timelineEvents: MeetingData.TIMELINE_EVENTS,
-    participants: MeetingData.PARTICIPANTS,
-  }), [reviewT, sim]);
+    totalDuration: reviewScenario.duration,
+    timelineEvents: reviewScenario.timeline,
+    participants: reviewScenario.participants,
+  }), [reviewT, sim, reviewScenario]);
 
   // Keyboard handler binds once. The screen value is read through a ref so
   // we don't tear down/rebuild the listener on every navigation, and so the
@@ -2921,8 +3234,10 @@ function App() {
         )}
         {screen === 'review' && (
           <>
-            <Chip tone="neutral">Q2 roadmap sync · Apr 17</Chip>
-            <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{MeetingData.fmtTime(175)} · 4 participants · 6 moments flagged</span>
+            <Chip tone="neutral">{sim.scenario.name}</Chip>
+            <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>
+              {MeetingData.fmtTime(sim.scenario.duration)} · {sim.scenario.participants.length} participants · {sim.scenario.timeline.length} moments flagged
+            </span>
             <div style={{ flex: 1 }}/>
             <button style={subBtn(false)}>Share review</button>
             <button style={subBtn(false)}>Export notes</button>

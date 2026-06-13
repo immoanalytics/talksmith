@@ -2,8 +2,10 @@
 // Timeline scrub + synced transcript/insights + suggestions + scores
 
 function Review({ playing, onTogglePlay, t, setT, sim }) {
-  const total = sim.totalDuration;
-  const events = sim.timelineEvents;
+  const scenario = sim.scenario;
+  const total = scenario.duration;
+  const events = scenario.timeline;
+  const nudges = scenario.nudges;
 
   // Playback tick
   React.useEffect(() => {
@@ -15,7 +17,7 @@ function Review({ playing, onTogglePlay, t, setT, sim }) {
   }, [playing, total]);
 
   // Nudges up to current time for the insight column
-  const insightsUpTo = MeetingData.NUDGE_SCRIPT.filter(n => n.t <= t);
+  const insightsUpTo = nudges.filter(n => n.t <= t);
   const currentInsight = insightsUpTo[insightsUpTo.length - 1];
 
   return (
@@ -27,7 +29,7 @@ function Review({ playing, onTogglePlay, t, setT, sim }) {
     }}>
       {/* Top bar: scores */}
       <div style={{ gridColumn: '1 / -1' }}>
-        <ScoreBar metrics={deriveFinalScores(sim)}/>
+        <ScoreBar scenario={scenario}/>
       </div>
 
       {/* LEFT — Transcript synced */}
@@ -42,12 +44,12 @@ function Review({ playing, onTogglePlay, t, setT, sim }) {
             </span>
           </div>
         }>
-        <SyncedTranscript t={t} setT={setT}/>
+        <SyncedTranscript scenario={scenario} t={t} setT={setT}/>
       </Panel>
 
       {/* CENTER — Timeline + Insight */}
       <Panel eyebrow="Key moments" title="Timeline" dense>
-        <Timeline events={events} total={total} t={t} setT={setT}/>
+        <Timeline scenario={scenario} events={events} total={total} t={t} setT={setT}/>
         <div style={{ padding: '10px 14px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto' }} className="scroll">
           {currentInsight ? (
             <CurrentInsight nudge={currentInsight}/>
@@ -86,7 +88,12 @@ function Review({ playing, onTogglePlay, t, setT, sim }) {
       {/* RIGHT — "What you could have said" */}
       <Panel eyebrow="Coaching" title="What you could have said" dense>
         <div className="scroll" style={{ flex: 1, overflowY: 'auto', padding: '10px 14px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {MeetingData.NUDGE_SCRIPT.filter(n => n.action).map(n => (
+          {nudges.filter(n => n.action).length === 0 && (
+            <div style={{ padding: 20, color: 'var(--ink-2)', fontSize: 12, textAlign: 'center' }}>
+              No rewrite suggestions for this meeting — you handled the moments well.
+            </div>
+          )}
+          {nudges.filter(n => n.action).map(n => (
             <CoachCard key={n.id} nudge={n} active={Math.abs(t - n.t) < 3} onJump={() => setT(n.t)}/>
           ))}
 
@@ -111,64 +118,79 @@ function Review({ playing, onTogglePlay, t, setT, sim }) {
   );
 }
 
-function deriveFinalScores(sim) {
-  return {
-    talkRatio: 62,   // you
-    clarity: 78,
-    influence: 64,
-    listening: 54,
-    interruptions: 2,
-    duration: 175,
-  };
-}
-
-function ScoreBar({ metrics }) {
+function ScoreBar({ scenario }) {
+  // Real, scenario-derived scores. Memoized so we don't re-analyze the
+  // transcript on every playback tick.
+  const result = React.useMemo(() => MeetingData.scoreScenario(scenario), [scenario]);
+  const { signals, tones } = result;
   const scores = [
-    { k: 'Talk ratio', v: metrics.talkRatio, unit: '%', target: '<50', tone: metrics.talkRatio > 55 ? 'amber' : 'green', hint: 'You spoke 62% of the meeting vs. team avg 48%' },
-    { k: 'Clarity',     v: metrics.clarity, unit: '/100', target: '>75', tone: 'green', hint: 'Fewer filler words than last meeting (−18%)' },
-    { k: 'Influence',   v: metrics.influence, unit: '/100', target: '>70', tone: 'amber', hint: 'Your proposals led to 2/3 decisions adopted' },
-    { k: 'Listening',   v: metrics.listening, unit: '/100', target: '>70', tone: 'rose',  hint: 'Acknowledged only 1/3 objections raised' },
+    { k: 'Talk ratio', v: result.talkRatio, unit: '%',    target: '<50', tone: tones.talkRatio, hint: signals.talkRatio },
+    { k: 'Clarity',    v: result.clarity,   unit: '/100', target: '>75', tone: tones.clarity,   hint: signals.clarity },
+    { k: 'Influence',  v: result.influence, unit: '/100', target: '>70', tone: tones.influence, hint: signals.influence },
+    { k: 'Listening',  v: result.listening, unit: '/100', target: '>70', tone: tones.listening, hint: signals.listening },
   ];
+  const gradeTone = result.overall >= 75 ? 'green' : result.overall >= 60 ? 'amber' : 'rose';
   return (
-    <div style={{
+    <div data-testid="score-bar" style={{
       display: 'grid', gridTemplateColumns: 'repeat(4, 1fr) auto',
       gap: 1, background: 'var(--line)',
       border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)',
       overflow: 'hidden',
     }}>
       {scores.map((s, i) => (
-        <div key={i} title={s.hint} style={{ background: 'var(--bg-1)', padding: '12px 16px', cursor: 'help' }}>
+        <div key={i} data-testid={`score-${s.k.toLowerCase().replace(/\s+/g, '-')}`}
+          title={s.hint.join(' · ')}
+          style={{ background: 'var(--bg-1)', padding: '12px 16px', cursor: 'help' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
             <span className="eyebrow">{s.k}</span>
             <span style={{ fontSize: 9.5, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>target {s.target}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
-            <span className="mono" style={{
+            <span className="mono" data-testid={`score-value-${s.k.toLowerCase().replace(/\s+/g, '-')}`} style={{
               fontSize: 26, fontWeight: 600, letterSpacing: '-0.03em',
               color: `var(--${s.tone})`,
             }}>{s.v}</span>
             <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{s.unit}</span>
           </div>
           <div style={{ marginTop: 6 }}>
-            <Meter value={s.v} max={s.unit === '%' ? 100 : 100} color={`var(--${s.tone})`} height={3}/>
+            <Meter value={s.v} max={100} color={`var(--${s.tone})`} height={3}/>
+          </div>
+          {/* Top contributing signal, always visible (explainability) */}
+          <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.35 }}>
+            {s.hint[0]}
           </div>
         </div>
       ))}
-      <div style={{ background: 'var(--bg-1)', padding: '12px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3 }}>
-        <span className="eyebrow">Meeting</span>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>Q2 roadmap sync</div>
-        <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>
-          {MeetingData.fmtTime(metrics.duration)} · 4 participants
+      <div style={{ background: 'var(--bg-1)', padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3 }}>
+          <span className="eyebrow">Meeting</span>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{scenario.name}</div>
+          <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+            {MeetingData.fmtTime(scenario.duration)} · {scenario.participants.length} participants
+          </div>
+        </div>
+        {/* Composite grade */}
+        <div data-testid="meeting-grade" title={`Overall ${result.overall}/100`} style={{
+          width: 52, height: 52, borderRadius: 12, flexShrink: 0,
+          display: 'grid', placeItems: 'center',
+          background: `var(--${gradeTone}-soft)`,
+          border: `1px solid var(--${gradeTone}-line, var(--line))`,
+          color: `var(--${gradeTone})`,
+        }}>
+          <span className="mono" style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.03em' }}>
+            {result.grade}
+          </span>
         </div>
       </div>
     </div>
   );
 }
 
-function SyncedTranscript({ t, setT }) {
+function SyncedTranscript({ scenario, t, setT }) {
   const scrollRef = React.useRef();
   const activeRef = React.useRef();
-  const activeIdx = MeetingData.SCRIPT.findLastIndex(l => l.t <= t);
+  const script = scenario.script;
+  const activeIdx = script.findLastIndex(l => l.t <= t);
 
   React.useEffect(() => {
     if (activeRef.current && scrollRef.current) {
@@ -182,8 +204,8 @@ function SyncedTranscript({ t, setT }) {
     <div ref={scrollRef} className="scroll" style={{
       flex: 1, overflowY: 'auto', padding: '8px 16px 14px', minHeight: 0,
     }}>
-      {MeetingData.SCRIPT.map((l, i) => {
-        const speaker = MeetingData.PARTICIPANTS.find(p => p.id === l.s);
+      {script.map((l, i) => {
+        const speaker = scenario.participants.find(p => p.id === l.s);
         const active = i === activeIdx;
         const past = l.t < t;
         return (
@@ -220,7 +242,7 @@ function SyncedTranscript({ t, setT }) {
   );
 }
 
-function Timeline({ events, total, t, setT }) {
+function Timeline({ scenario, events, total, t, setT }) {
   const barRef = React.useRef();
   const handleClick = (e) => {
     const rect = barRef.current.getBoundingClientRect();
@@ -237,10 +259,10 @@ function Timeline({ events, total, t, setT }) {
     <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid var(--line-soft)' }}>
       {/* Speaker lanes */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 8 }}>
-        {MeetingData.PARTICIPANTS.map(p => {
-          const segments = MeetingData.SCRIPT.filter(l => l.s === p.id).map(l => ({
+        {scenario.participants.map(p => {
+          const segments = scenario.script.filter(l => l.s === p.id).map(l => ({
             start: l.t / total * 100,
-            width: Math.min(100, (l.txt.split(/\s+/).length * 0.35) / total * 100),
+            width: Math.min(100, (l.txt.split(/\s+/).length / 145 * 60) / total * 100),
           }));
           return (
             <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

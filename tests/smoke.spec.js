@@ -136,3 +136,67 @@ test.describe('data integrity', () => {
     expect(issues).toEqual([]);
   });
 });
+
+test.describe('scoring engine', () => {
+  // The post-meeting scores must be real (derived from the transcript), not
+  // canned. These guard the headline "quality of results" behavior.
+  test('every scenario scores in range with explainable signals', async ({ page }) => {
+    await bootApp(page);
+    const issues = await page.evaluate(() => {
+      const md = window.MeetingData;
+      const out = [];
+      const inRange = (v) => typeof v === 'number' && v >= 0 && v <= 100;
+      for (const s of Object.values(md.SCENARIOS)) {
+        const r = md.scoreScenario(s);
+        for (const k of ['talkRatio', 'clarity', 'influence', 'listening', 'engagement', 'overall']) {
+          if (!inRange(r[k])) out.push(`${s.id}.${k} out of range: ${r[k]}`);
+        }
+        if (!'ABCDE'.includes(r.grade)) out.push(`${s.id}: bad grade ${r.grade}`);
+        for (const k of ['talkRatio', 'clarity', 'influence', 'listening']) {
+          if (!Array.isArray(r.signals[k]) || r.signals[k].length === 0) {
+            out.push(`${s.id}.${k}: missing explainability signals`);
+          }
+        }
+      }
+      return out;
+    });
+    expect(issues).toEqual([]);
+  });
+
+  test('scores are scenario-dependent, not hardcoded', async ({ page }) => {
+    await bootApp(page);
+    const { q2, decision } = await page.evaluate(() => {
+      const md = window.MeetingData;
+      return {
+        q2: md.scoreScenario(md.SCENARIOS.q2_roadmap),
+        decision: md.scoreScenario(md.SCENARIOS.clear_decision),
+      };
+    });
+    // A crisp, balanced decision meeting should out-score the contentious Q2
+    // roadmap on talk balance and overall — proving the numbers track content.
+    expect(decision.talkRatio).toBeLessThan(q2.talkRatio);
+    expect(decision.overall).toBeGreaterThan(q2.overall);
+    expect(q2.overall).not.toEqual(decision.overall);
+  });
+});
+
+test.describe('review screen', () => {
+  test('shows a computed grade and scenario-derived scores', async ({ page }) => {
+    await bootApp(page);
+    await page.locator('[data-testid="screen-tab-review"]').click();
+    await expect(page.locator('[data-testid="score-bar"]')).toBeVisible();
+    await expect(page.locator('[data-testid="meeting-grade"]')).toHaveText(/^[ABCDE]$/);
+    // Talk-ratio score should be a plausible percentage, not blank.
+    await expect(page.locator('[data-testid="score-value-talk-ratio"]')).toHaveText(/^\d{1,3}$/);
+  });
+
+  test('review reflects the selected scenario', async ({ page }) => {
+    await bootApp(page);
+    // Switch to the clean-decision scenario, then open Review.
+    await page.locator('[data-testid="screen-tab-live"]').click();
+    await page.locator('[data-testid="settings-button"] button').click();
+    await page.locator('[data-testid="scenario-picker"]').selectOption('clear_decision');
+    await page.locator('[data-testid="screen-tab-review"]').click();
+    await expect(page.locator('[data-testid="score-bar"]')).toContainText('Eng standup');
+  });
+});

@@ -5,12 +5,27 @@ function Nudge({ nudge, onDismiss, onSnooze, variant = 'card', compact = false }
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => { setMounted(true); }, []);
   const [phraseOpen, setPhraseOpen] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
 
   const tone = nudge.tone || 'blue';
   const toneColor = `var(--${tone})`;
   const toneBg = `var(--${tone}-soft)`;
   const toneLine = `var(--${tone}-line)`;
   const coach = nudge.coach ? MeetingData.COACHES[nudge.coach] : null;
+
+  const copyPhrase = React.useCallback(() => {
+    const phrase = nudge.action?.phrase;
+    if (!phrase) return;
+    // Strip the surrounding curly quotes the script uses for typographic flair
+    // so the pasted phrase reads naturally in chat / docs.
+    const plain = phrase.replace(/^["“]|["”]$/g, '');
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1400); };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(plain).then(done, done);
+    } else {
+      done();
+    }
+  }, [nudge.action]);
 
   if (variant === 'pill') {
     return (
@@ -34,7 +49,7 @@ function Nudge({ nudge, onDismiss, onSnooze, variant = 'card', compact = false }
             fontSize: 11, fontWeight: 500, cursor: 'pointer', padding: 0,
           }}>{nudge.action.label} →</button>
         )}
-        <button onClick={() => onDismiss?.(nudge.id)} style={{
+        <button onClick={() => onDismiss?.(nudge.id)} aria-label="Dismiss cue" title="Dismiss" style={{
           border: 'none', background: 'transparent', color: 'var(--ink-2)',
           cursor: 'pointer', padding: 0, display: 'grid', placeItems: 'center',
         }}>{I('x', { size: 11 })}</button>
@@ -79,7 +94,7 @@ function Nudge({ nudge, onDismiss, onSnooze, variant = 'card', compact = false }
             }}>{nudge.action.phrase}</div>
           )}
         </div>
-        <button onClick={() => onDismiss?.(nudge.id)} style={{
+        <button onClick={() => onDismiss?.(nudge.id)} aria-label="Dismiss cue" title="Dismiss" style={{
           border: 'none', background: 'transparent', color: 'var(--ink-2)',
           cursor: 'pointer', padding: 0, alignSelf: 'flex-start',
         }}>{I('x', { size: 12 })}</button>
@@ -167,8 +182,22 @@ function Nudge({ nudge, onDismiss, onSnooze, variant = 'card', compact = false }
             fontSize: 12.5, color: 'var(--ink-0)',
             fontStyle: 'italic',
             animation: 'fadeUp 200ms var(--ease) both',
+            position: 'relative',
           }}>
-            <div className="eyebrow" style={{ marginBottom: 3, fontStyle: 'normal' }}>Say it like</div>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 3 }}>
+              <span className="eyebrow" style={{ fontStyle: 'normal' }}>Say it like</span>
+              <div style={{ flex: 1 }}/>
+              <button onClick={copyPhrase} title="Copy phrase" style={{
+                border: 'none', background: 'transparent', color: copied ? 'var(--green)' : toneColor,
+                fontSize: 10.5, fontWeight: 500, padding: '2px 4px', cursor: 'pointer',
+                fontFamily: 'inherit', fontStyle: 'normal',
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                transition: 'color var(--speed)',
+              }}>
+                {I(copied ? 'check' : 'copy', { size: 11 })}
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
             {nudge.action.phrase}
           </div>
         )}

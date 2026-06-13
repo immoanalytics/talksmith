@@ -47,44 +47,26 @@ function Profile({ activeGoal, setActiveGoal }) {
               id="listen" selected={goal === 'listen'} onSelect={setGoal}
               icon="users" label="Improve listening"
               desc="Acknowledge objections, reduce interruptions"
-              boosts="Listening, Team dynamics"
               progress={54} delta={+9}
             />
             <GoalChoice
               id="assertive" selected={goal === 'assertive'} onSelect={setGoal}
               icon="flag" label="Be more assertive"
               desc="Make your recommendation clear upfront"
-              boosts="Influence, Outcomes"
               progress={71} delta={+4}
             />
             <GoalChoice
               id="clarity" selected={goal === 'clarity'} onSelect={setGoal}
               icon="sparkle" label="Improve clarity"
               desc="Fewer filler words, shorter sentences"
-              boosts="Clarity"
               progress={78} delta={+14}
             />
             <GoalChoice
               id="balance" selected={goal === 'balance'} onSelect={setGoal}
               icon="pulse" label="Balance talk time"
               desc="Under 50% in most meetings"
-              boosts="Listening, Team dynamics"
               progress={48} delta={-3} negative
             />
-          </div>
-        </Panel>
-
-        <Panel eyebrow="Team" title="Your coaches" dense>
-          <div style={{ padding: '6px 12px 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <div style={{ fontSize: 11, color: 'var(--ink-2)', padding: '4px 0 8px', lineHeight: 1.4 }}>
-              The head coach picks which specialist gets the floor. Your active goal tells it who to lean on.
-            </div>
-            <CoachRow coach="listening" weight={weights.listening || 0}/>
-            <CoachRow coach="clarity"   weight={weights.clarity   || 0}/>
-            <CoachRow coach="influence" weight={weights.influence || 0}/>
-            <CoachRow coach="team"      weight={weights.team      || 0}/>
-            <CoachRow coach="tone"      weight={weights.tone      || 0}/>
-            <CoachRow coach="outcomes"  weight={weights.outcomes  || 0}/>
           </div>
         </Panel>
       </div>
@@ -174,7 +156,7 @@ function MiniStat({ k, v, hint }) {
   );
 }
 
-function GoalChoice({ id, selected, onSelect, icon, label, desc, boosts, progress, delta, negative }) {
+function GoalChoice({ id, selected, onSelect, icon, label, desc, progress, delta, negative }) {
   return (
     <button onClick={() => onSelect(id)} style={{
       width: '100%', textAlign: 'left', cursor: 'pointer',
@@ -201,59 +183,10 @@ function GoalChoice({ id, selected, onSelect, icon, label, desc, boosts, progres
             {delta > 0 ? '+' : ''}{delta}
           </span>
         </div>
-        <div style={{ fontSize: 11.5, color: 'var(--ink-2)', marginTop: 1, marginBottom: 4 }}>{desc}</div>
-        {boosts && (
-          <div style={{ fontSize: 10.5, color: 'var(--ink-3)', marginBottom: 6, fontFamily: 'var(--font-mono)' }}>
-            boosts {boosts}
-          </div>
-        )}
+        <div style={{ fontSize: 11.5, color: 'var(--ink-2)', marginTop: 1, marginBottom: 6 }}>{desc}</div>
         <Meter value={progress} color="var(--blue)" height={3}/>
       </div>
     </button>
-  );
-}
-
-// One row in the "Your coaches" panel. Weight is −1..+1 from GOAL_COACH_WEIGHTS;
-// shown as a diverging bar around a center line so louder/quieter reads instantly.
-function CoachRow({ coach, weight }) {
-  const meta = MeetingData.COACHES[coach];
-  const clamped = Math.max(-1, Math.min(1, weight));
-  const louder = clamped > 0;
-  const quieter = clamped < 0;
-  const magnitudePct = Math.round(Math.abs(clamped) * 50); // half-width
-  const barColor = louder ? 'var(--blue)' : quieter ? 'var(--ink-3)' : 'var(--line-strong)';
-  const labelColor = louder ? 'var(--blue)' : quieter ? 'var(--ink-3)' : 'var(--ink-2)';
-  const tag = louder ? 'louder' : quieter ? 'quieter' : 'neutral';
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 8,
-      padding: '5px 2px',
-    }}>
-      <span style={{
-        flex: 1, fontSize: 12, color: 'var(--ink-0)', fontWeight: louder ? 600 : 400,
-      }}>{meta.name}</span>
-      <div style={{
-        width: 90, height: 4, position: 'relative',
-        background: 'var(--bg-inset)', borderRadius: 2, overflow: 'visible',
-      }}>
-        {/* center line */}
-        <div style={{
-          position: 'absolute', top: -2, bottom: -2, left: '50%', width: 1,
-          background: 'var(--line-strong)', opacity: 0.6,
-        }}/>
-        {/* bar */}
-        <div style={{
-          position: 'absolute', top: 0, bottom: 0,
-          left: louder ? '50%' : `${50 - magnitudePct}%`,
-          width: magnitudePct + '%',
-          background: barColor, borderRadius: 2,
-          transition: 'all var(--speed) var(--ease)',
-        }}/>
-      </div>
-      <span className="mono" style={{
-        fontSize: 10, color: labelColor, width: 46, textAlign: 'right',
-      }}>{tag}</span>
-    </div>
   );
 }
 

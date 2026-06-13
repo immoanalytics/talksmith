@@ -226,9 +226,12 @@ function GuidanceStream({ active, history, onDismiss, onSnooze, variant, muted }
             <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>No active cues</div>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div data-testid="active-cues" data-active-count={active.length}
+            style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {active.map(n => (
-              <Nudge key={n.id} nudge={n} onDismiss={onDismiss} onSnooze={onSnooze} variant={variant}/>
+              <div key={n.id} data-testid="active-cue" data-cue-id={n.id} data-cue-coach={n.coach}>
+                <Nudge nudge={n} onDismiss={onDismiss} onSnooze={onSnooze} variant={variant}/>
+              </div>
             ))}
           </div>
         )}
@@ -360,7 +363,7 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
           active={sim.activeNudges}
           history={sim.nudgeHistory}
           onDismiss={sim.dismissNudge}
-          onSnooze={sim.dismissNudge}
+          onSnooze={sim.snoozeNudge}
           variant={variant}
           muted={muted}
         />
@@ -403,12 +406,54 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
               </div>
               <SilenceBar gap={sim.metrics.silenceGap} context={sim.metrics.silenceContext}/>
             </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <MetricTile
+                label="Longest run"
+                value={sim.metrics.longestMonologueSec}
+                suffix="s"
+                hint={sim.metrics.longestMonologueSec > 30 ? 'long — pause sooner' : 'healthy'}
+                color={sim.metrics.longestMonologueSec > 30 ? 'var(--amber)' : 'var(--ink-0)'}
+              />
+              <MetricTile
+                label="Questions"
+                value={sim.metrics.questionCount}
+                suffix={`· ${sim.metrics.openQuestions} open`}
+                hint={sim.metrics.questionCount === 0 ? 'invite input' : 'inviting input'}
+                color={sim.metrics.openQuestions > 0 ? 'var(--green)' : 'var(--ink-0)'}
+              />
+            </div>
+          </CoachBlock>
+
+          {/* Clarity coach — your delivery */}
+          <CoachBlock name="Clarity coach" scope="watching you">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <MetricTile
+                label="Filler words"
+                value={sim.metrics.fillerCount}
+                suffix={`· ${sim.metrics.fillerRate.toFixed(1)}/100w`}
+                hint={sim.metrics.fillerRate > 4 ? 'trim the filler' : 'clean delivery'}
+                color={sim.metrics.fillerRate > 4 ? 'var(--amber)' : 'var(--green)'}
+              />
+              <MetricTile
+                label="Hedging"
+                value={sim.metrics.hedgeCount}
+                suffix="phrases"
+                hint={sim.metrics.hedgeCount > 4 ? 'state it plainly' : 'assertive'}
+                color={sim.metrics.hedgeCount > 4 ? 'var(--amber)' : 'var(--ink-0)'}
+              />
+            </div>
           </CoachBlock>
 
           {/* Team dynamics coach — group health */}
           <CoachBlock name="Team dynamics coach" scope="watching the group">
             <div>
-              <div className="eyebrow" style={{ marginBottom: 6 }}>Who's talking over whom</div>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+                <span className="eyebrow">Who's talking over whom</span>
+                <div style={{ flex: 1 }}/>
+                <Chip tone={sim.metrics.psychSafety === 'healthy' ? 'green' : sim.metrics.psychSafety === 'watch' ? 'amber' : 'rose'} size="sm">
+                  safety: {sim.metrics.psychSafety}
+                </Chip>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                 <InterruptCell
                   label="you → others"
@@ -418,7 +463,7 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
                 <InterruptCell
                   label="others → you"
                   value={sim.metrics.othersInterruptedYou}
-                  tone="neutral"
+                  tone={sim.metrics.othersInterruptedYou > 0 ? 'amber' : 'neutral'}
                 />
               </div>
             </div>
@@ -426,7 +471,7 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
               label="Engagement"
               value={Math.round(sim.metrics.engagement * 100)}
               suffix="/100"
-              hint="3 speakers · active"
+              hint={`${sim.participants.length} participants`}
               color={sim.metrics.engagement > 0.6 ? 'var(--green)' : 'var(--ink-0)'}
             />
           </CoachBlock>

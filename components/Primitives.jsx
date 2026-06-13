@@ -17,7 +17,7 @@ function TitleBar({ title, subtitle, meetingState, onSettings, activeScreen, onS
     { id: 'profile', label: 'Profile', key: '4' },
   ];
   return (
-    <div style={{
+    <div data-testid="title-bar" style={{
       height: 44, flexShrink: 0,
       display: 'flex', alignItems: 'center',
       padding: '0 12px',
@@ -39,16 +39,19 @@ function TitleBar({ title, subtitle, meetingState, onSettings, activeScreen, onS
       </div>
 
       {/* Screen tabs */}
-      <div style={{ display: 'flex', gap: 2, background: 'var(--bg-inset)', padding: 2, borderRadius: 8, border: '1px solid var(--line-soft)' }}>
+      <div data-testid="screen-tabs" style={{ display: 'flex', gap: 2, background: 'var(--bg-inset)', padding: 2, borderRadius: 8, border: '1px solid var(--line-soft)' }}>
         {screens.map(s => (
-          <button key={s.id} onClick={() => onScreenChange(s.id)} style={{
-            border: 'none', background: activeScreen === s.id ? 'var(--bg-2)' : 'transparent',
-            color: activeScreen === s.id ? 'var(--ink-0)' : 'var(--ink-2)',
-            fontSize: 12, fontWeight: 500, padding: '4px 10px', borderRadius: 6,
-            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-            boxShadow: activeScreen === s.id ? 'var(--shadow-card)' : 'none',
-            transition: 'all var(--speed) var(--ease)',
-          }}>
+          <button key={s.id} onClick={() => onScreenChange(s.id)}
+            data-testid={`screen-tab-${s.id}`}
+            aria-pressed={activeScreen === s.id}
+            style={{
+              border: 'none', background: activeScreen === s.id ? 'var(--bg-2)' : 'transparent',
+              color: activeScreen === s.id ? 'var(--ink-0)' : 'var(--ink-2)',
+              fontSize: 12, fontWeight: 500, padding: '4px 10px', borderRadius: 6,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+              boxShadow: activeScreen === s.id ? 'var(--shadow-card)' : 'none',
+              transition: 'all var(--speed) var(--ease)',
+            }}>
             {s.label}
             <span className="mono" style={{ fontSize: 9, color: 'var(--ink-3)', padding: '1px 4px', border: '1px solid var(--line)', borderRadius: 3 }}>⌘{s.key}</span>
           </button>
@@ -73,7 +76,7 @@ function TitleBar({ title, subtitle, meetingState, onSettings, activeScreen, onS
                 }} />
                 <span style={{ color: 'var(--rose)', fontWeight: 500 }}>Listening</span>
                 <span style={{ color: 'var(--ink-2)' }}>·</span>
-                <span className="mono" style={{ color: 'var(--ink-1)' }}>{meetingState.timecode}</span>
+                <span data-testid="timecode" className="mono" style={{ color: 'var(--ink-1)' }}>{meetingState.timecode}</span>
               </>
             ) : (
               <>
@@ -91,7 +94,9 @@ function TitleBar({ title, subtitle, meetingState, onSettings, activeScreen, onS
       {/* Right */}
       <div style={{ display: 'flex', gap: 4 }}>
         <IconButton tip="Mute coaching (⌘M)">{I('bell', { size: 13 })}</IconButton>
-        <IconButton tip="Settings" onClick={onSettings}>{I('settings', { size: 13 })}</IconButton>
+        <span data-testid="settings-button">
+          <IconButton tip="Settings" onClick={onSettings}>{I('settings', { size: 13 })}</IconButton>
+        </span>
       </div>
     </div>
   );
@@ -112,7 +117,7 @@ function BrandMark({ size = 18 }) {
 function IconButton({ children, tip, onClick, active, danger, size = 28 }) {
   const [hover, setHover] = React.useState(false);
   return (
-    <button onClick={onClick}
+    <button onClick={onClick} aria-label={tip} aria-pressed={active ? true : undefined}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       title={tip} style={{
         width: size, height: size,

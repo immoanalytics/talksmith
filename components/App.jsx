@@ -5,36 +5,84 @@ const TWEAKS = /*EDITMODE-BEGIN*/{
   "startScreen": "live"
 }/*EDITMODE-END*/;
 
+// Read a saved preference from localStorage with a fallback. SSR-safe and
+// resilient to localStorage being disabled (Safari private mode, etc).
+function loadPref(key, fallback) {
+  try {
+    if (typeof localStorage === 'undefined') return fallback;
+    const v = localStorage.getItem(key);
+    return v == null ? fallback : v;
+  } catch { return fallback; }
+}
+
+// First-run theme picks up the system preference; once the user picks a
+// theme in Tweaks it's pinned and the OS preference is ignored.
+function pickInitialTheme() {
+  const stored = loadPref('talksmith.theme', null);
+  if (stored === 'dark' || stored === 'light') return stored;
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }
+  return TWEAKS.theme;
+}
+
 function App() {
-  const [theme, setTheme] = React.useState(TWEAKS.theme);
-  const [nudgeStyle, setNudgeStyle] = React.useState(TWEAKS.nudgeStyle);
+  const [theme, setTheme] = React.useState(pickInitialTheme);
+  const [nudgeStyle, setNudgeStyle] = React.useState(() => loadPref('talksmith.nudgeStyle', TWEAKS.nudgeStyle));
   const [showTweaks, setShowTweaks] = React.useState(false);
   const [editMode, setEditMode] = React.useState(false);
 
-  const stored = (typeof localStorage !== 'undefined' && localStorage.getItem('talksmith.screen')) || TWEAKS.startScreen;
-  const storedGoal = (typeof localStorage !== 'undefined' && localStorage.getItem('talksmith.goal')) || 'listen';
-  const [screen, setScreen] = React.useState(stored);
+  const [screen, setScreen] = React.useState(() => loadPref('talksmith.screen', TWEAKS.startScreen));
   const [running, setRunning] = React.useState(true);
   const [speed, setSpeed] = React.useState(1);
-  const [muted, setMuted] = React.useState(false);
+  const [muted, setMuted] = React.useState(() => loadPref('talksmith.muted', '0') === '1');
   const [idle, setIdle] = React.useState(false);
-  const [activeGoal, setActiveGoal] = React.useState(storedGoal);
+  const [activeGoal, setActiveGoal] = React.useState(() => loadPref('talksmith.goal', 'listen'));
+  const [scenarioId, setScenarioId] = React.useState(() => {
+    const v = loadPref('talksmith.scenario', 'q2_roadmap');
+    return MeetingData.SCENARIOS[v] ? v : 'q2_roadmap';
+  });
 
   React.useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
-  React.useEffect(() => { localStorage.setItem('talksmith.screen', screen); }, [screen]);
-  React.useEffect(() => { localStorage.setItem('talksmith.goal', activeGoal); }, [activeGoal]);
+  React.useEffect(() => { try { localStorage.setItem('talksmith.theme', theme); } catch {} }, [theme]);
+  React.useEffect(() => { try { localStorage.setItem('talksmith.nudgeStyle', nudgeStyle); } catch {} }, [nudgeStyle]);
+  React.useEffect(() => { try { localStorage.setItem('talksmith.screen', screen); } catch {} }, [screen]);
+  React.useEffect(() => { try { localStorage.setItem('talksmith.goal', activeGoal); } catch {} }, [activeGoal]);
+  React.useEffect(() => { try { localStorage.setItem('talksmith.muted', muted ? '1' : '0'); } catch {} }, [muted]);
+  React.useEffect(() => { try { localStorage.setItem('talksmith.scenario', scenarioId); } catch {} }, [scenarioId]);
 
-  const sim = MeetingData.useMeetingSim({ running: running && !idle, speed, startAt: 48, activeGoal });
+  // Pause the live sim when the user isn't on a screen that consumes it.
+  // Profile/Review don't read sim state; ticking it is wasted work and the
+  // timecode is misleading anyway when you're not "in" the meeting.
+  const screenWantsSim = screen === 'live' || screen === 'overlay';
+  const sim = MeetingData.useMeetingSim({
+    running: running && !idle && screenWantsSim,
+    speed, activeGoal, scenarioId,
+  });
 
   const [reviewT, setReviewT] = React.useState(42);
   const [reviewPlaying, setReviewPlaying] = React.useState(false);
+  // The Review screen reads everything from the active scenario so it tracks
+  // the scenario picker just like Live does. Clamp the scrub head to the
+  // scenario duration so switching from a long to a short meeting can't leave
+  // the playhead past the end.
+  const reviewScenario = sim.scenario;
+  React.useEffect(() => {
+    setReviewT(prev => Math.min(prev, reviewScenario.duration));
+  }, [reviewScenario]);
   const reviewSim = React.useMemo(() => ({
     ...sim,
     t: reviewT, tc: MeetingData.fmtTime(reviewT),
-    totalDuration: 175,
-    timelineEvents: MeetingData.TIMELINE_EVENTS,
-    participants: MeetingData.PARTICIPANTS,
-  }), [reviewT, sim]);
+    totalDuration: reviewScenario.duration,
+    timelineEvents: reviewScenario.timeline,
+    participants: reviewScenario.participants,
+  }), [reviewT, sim, reviewScenario]);
+
+  // Keyboard handler binds once. The screen value is read through a ref so
+  // we don't tear down/rebuild the listener on every navigation, and so the
+  // Space-bar branch always sees the freshest screen.
+  const screenRef = React.useRef(screen);
+  React.useEffect(() => { screenRef.current = screen; }, [screen]);
 
   React.useEffect(() => {
     const onKey = (e) => {
@@ -46,14 +94,15 @@ function App() {
         if (e.key === '4') { setScreen('profile'); e.preventDefault(); }
         if (e.key.toLowerCase() === 'm') { setMuted(m => !m); e.preventDefault(); }
       } else if (e.key === ' ') {
-        if (screen === 'live' || screen === 'overlay') setRunning(r => !r);
-        if (screen === 'review') setReviewPlaying(p => !p);
+        const cur = screenRef.current;
+        if (cur === 'live' || cur === 'overlay') setRunning(r => !r);
+        if (cur === 'review') setReviewPlaying(p => !p);
         e.preventDefault();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [screen]);
+  }, []);
 
   React.useEffect(() => {
     const onMsg = (e) => {
@@ -88,8 +137,8 @@ function App() {
       }}>
         {screen === 'live' && (
           <>
-            <Chip tone="neutral">Q2 roadmap sync</Chip>
-            <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>Thu · 2:00 PM · 30m scheduled</span>
+            <span data-testid="active-scenario-name"><Chip tone="neutral">{sim.scenario.name}</Chip></span>
+            <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{sim.scenario.summary}</span>
             <div style={{ flex: 1 }}/>
             <button onClick={() => setIdle(i => !i)} style={subBtn(idle)}>
               {idle ? 'Start meeting' : 'Idle state'}
@@ -110,8 +159,10 @@ function App() {
         )}
         {screen === 'review' && (
           <>
-            <Chip tone="neutral">Q2 roadmap sync · Apr 17</Chip>
-            <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{MeetingData.fmtTime(175)} · 4 participants · 6 moments flagged</span>
+            <Chip tone="neutral">{sim.scenario.name}</Chip>
+            <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>
+              {MeetingData.fmtTime(sim.scenario.duration)} · {sim.scenario.participants.length} participants · {sim.scenario.timeline.length} moments flagged
+            </span>
             <div style={{ flex: 1 }}/>
             <button style={subBtn(false)}>Share review</button>
             <button style={subBtn(false)}>Export notes</button>
@@ -161,6 +212,7 @@ function App() {
         <TweaksPanel
           theme={theme} setTheme={(v) => { setTheme(v); persist('theme', v); }}
           nudgeStyle={nudgeStyle} setNudgeStyle={(v) => { setNudgeStyle(v); persist('nudgeStyle', v); }}
+          scenarioId={scenarioId} setScenarioId={setScenarioId}
           onClose={() => { setShowTweaks(false); }}
           editMode={editMode}
         />
@@ -242,10 +294,12 @@ function IdleState({ onStart }) {
   );
 }
 
-function TweaksPanel({ theme, setTheme, nudgeStyle, setNudgeStyle, onClose, editMode }) {
+function TweaksPanel({ theme, setTheme, nudgeStyle, setNudgeStyle, scenarioId, setScenarioId, onClose, editMode }) {
+  const scenarios = MeetingData.SCENARIOS;
+  const activeScenario = scenarios[scenarioId];
   return (
-    <div style={{
-      position: 'fixed', bottom: 40, left: 20, width: 240,
+    <div data-testid="tweaks-panel" style={{
+      position: 'fixed', bottom: 40, left: 20, width: 260,
       background: 'var(--bg-1)', border: '1px solid var(--line-strong)',
       borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-pop)', zIndex: 100,
       animation: 'fadeUp 200ms var(--ease) both',
@@ -257,13 +311,37 @@ function TweaksPanel({ theme, setTheme, nudgeStyle, setNudgeStyle, onClose, edit
         <span className="eyebrow">Tweaks</span>
         <div style={{ flex: 1 }}/>
         {!editMode && (
-          <button onClick={onClose} style={{
+          <button onClick={onClose} aria-label="Close tweaks panel" title="Close" style={{
             border: 'none', background: 'transparent', color: 'var(--ink-2)',
             cursor: 'pointer', padding: 2, display: 'grid', placeItems: 'center',
           }}>{I('x', { size: 12 })}</button>
         )}
       </div>
       <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {setScenarioId && (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--ink-1)', marginBottom: 5 }}>Scenario</div>
+            <select
+              data-testid="scenario-picker"
+              value={scenarioId}
+              onChange={(e) => setScenarioId(e.target.value)}
+              style={{
+                width: '100%', fontFamily: 'inherit', fontSize: 11.5, padding: '5px 8px',
+                background: 'var(--bg-inset)', color: 'var(--ink-0)',
+                border: '1px solid var(--line)', borderRadius: 5, cursor: 'pointer',
+              }}
+            >
+              {Object.values(scenarios).map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            {activeScenario && (
+              <div style={{ fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.4 }}>
+                {activeScenario.summary}
+              </div>
+            )}
+          </div>
+        )}
         <div>
           <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--ink-1)', marginBottom: 5 }}>Theme</div>
           <div style={{ display: 'flex', gap: 4 }}>

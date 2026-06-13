@@ -17,6 +17,7 @@ const Icons = {
   chevUp:    <path d="M3 10l5-4 5 4" />,
   x:         <path d="M4 4l8 8M12 4l-8 8" />,
   check:     <path d="M3 8.5l3 3 7-7" />,
+  copy:      <><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1 1 0 00-1-1H3a1 1 0 00-1 1v7a1 1 0 001 1h2"/></>,
   dot:       <circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/>,
   sparkle:   <path d="M8 2v4M8 10v4M2 8h4M10 8h4M4 4l2.5 2.5M9.5 9.5L12 12M12 4L9.5 6.5M6.5 9.5L4 12"/>,
   wave:      <path d="M1 8c1-3 2-3 3 0s2 3 3 0 2-3 3 0 2 3 3 0"/>,
