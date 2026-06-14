@@ -751,9 +751,62 @@ function nudgeImpact(n) {
   return { critical: 1, suggest: 0.65, insight: 0.5 }[n.type] ?? 0.5;
 }
 
+// Personal learning model — aggregates the user's recent meetings (the
+// scenario library, treated as meeting history) into the numbers the Profile
+// screen shows. Derived from the same scoring engine, so Profile agrees with
+// Live and Review instead of inventing its own figures.
+function profileModel() {
+  const scored = Object.values(SCENARIOS).map(s => ({ scenario: s, ...scoreScenario(s) }));
+  const n = scored.length || 1;
+  const avg = (sel) => scored.reduce((a, x) => a + sel(x), 0) / n;
+
+  const avgTalk = Math.round(avg(x => x.talkRatio));
+  const avgClarity = Math.round(avg(x => x.clarity));
+  const avgListening = Math.round(avg(x => x.listening));
+  const avgInfluence = Math.round(avg(x => x.influence));
+  const avgEngagement = Math.round(avg(x => x.engagement));
+  const avgOverall = Math.round(avg(x => x.overall));
+  const overallGrade = avgOverall >= 85 ? 'A' : avgOverall >= 75 ? 'B' : avgOverall >= 65 ? 'C' : avgOverall >= 55 ? 'D' : 'E';
+
+  const totalInterruptions = scored.reduce((a, x) => a + x.analysis.youInterruptedOthers, 0);
+  const interruptionsPerMtg = +(totalInterruptions / n).toFixed(1);
+  const avgFillerRate = +avg(x => x.analysis.fillerRate).toFixed(1);
+
+  const skills = [
+    { key: 'Clarity', v: avgClarity },
+    { key: 'Influence', v: avgInfluence },
+    { key: 'Listening', v: avgListening },
+  ].sort((a, b) => b.v - a.v);
+  const strongest = skills[0], weakest = skills[skills.length - 1];
+
+  const byInterrupt = scored.slice().sort((a, b) => b.analysis.youInterruptedOthers - a.analysis.youInterruptedOthers)[0];
+
+  // Sign of the turn-length ↔ clarity relationship across meetings, so the
+  // "what the model learned" note is actually backed by the data on screen.
+  const meanTurn = avg(x => x.analysis.avgTurnWords);
+  const meanClarity = avgClarity;
+  let cov = 0;
+  for (const x of scored) cov += (x.analysis.avgTurnWords - meanTurn) * (x.clarity - meanClarity);
+  const shorterTurnsClearer = cov <= 0;
+
+  const goalProgress = {
+    listen: avgListening,
+    assertive: avgInfluence,
+    clarity: avgClarity,
+    balance: Math.round(clamp(100 - Math.max(0, avgTalk - 50) * 2)),
+  };
+
+  return {
+    n, avgTalk, avgClarity, avgListening, avgInfluence, avgEngagement,
+    avgOverall, overallGrade, totalInterruptions, interruptionsPerMtg,
+    avgFillerRate, strongest, weakest, byInterrupt, shorterTurnsClearer,
+    goalProgress, scored,
+  };
+}
+
 window.MeetingData = {
   PARTICIPANTS, SCRIPT, NUDGE_SCRIPT, TIMELINE_EVENTS,
   COACHES, GOAL_COACH_WEIGHTS, SCENARIOS,
   fmtTime, useMeetingSim, deriveMetrics,
-  analyzeTranscript, scoreFromAnalysis, scoreScenario, nudgeImpact,
+  analyzeTranscript, scoreFromAnalysis, scoreScenario, nudgeImpact, profileModel,
 };

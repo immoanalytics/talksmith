@@ -4,8 +4,18 @@ function Profile({ activeGoal, setActiveGoal }) {
   const setGoal = setActiveGoal;
   const weights = MeetingData.GOAL_COACH_WEIGHTS[goal] || {};
 
+  // Everything on this screen is derived from the scoring engine so it agrees
+  // with Live and Review. The headline numbers and each trend's latest point
+  // are real; the earlier history is a gentle ramp toward that real value.
+  const model = React.useMemo(() => MeetingData.profileModel(), []);
+  const ramp = (end, start, len = 12) =>
+    Array.from({ length: len }, (_, i) => +(start + (end - start) * (i / (len - 1))).toFixed(2));
+
+  // Per-goal progress + distance to target, both from real scores.
+  const goalTargets = { listen: 70, assertive: 70, clarity: 75, balance: 70 };
+
   return (
-    <div style={{
+    <div data-testid="profile-screen" style={{
       flex: 1, display: 'grid',
       gridTemplateColumns: '1fr 1.4fr',
       gap: 14, padding: 14, minHeight: 0, overflow: 'hidden',
@@ -33,9 +43,9 @@ function Profile({ activeGoal, setActiveGoal }) {
               display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1,
               background: 'var(--line)', border: '1px solid var(--line)', borderRadius: 6, overflow: 'hidden',
             }}>
-              <MiniStat k="Meetings" v="142" hint="last 90d"/>
-              <MiniStat k="Coached hours" v="86" hint="live on"/>
-              <MiniStat k="Streak" v="11d" hint="daily use"/>
+              <MiniStat k="Meetings" v={String(model.n)} hint="analyzed"/>
+              <MiniStat k="Avg grade" v={model.overallGrade} hint={`${model.avgOverall}/100`}/>
+              <MiniStat k="Talk avg" v={`${model.avgTalk}%`} hint="target ≤50"/>
             </div>
           </div>
         </Panel>
@@ -47,25 +57,33 @@ function Profile({ activeGoal, setActiveGoal }) {
               id="listen" selected={goal === 'listen'} onSelect={setGoal}
               icon="users" label="Improve listening"
               desc="Acknowledge objections, reduce interruptions"
-              progress={54} delta={+9}
+              progress={model.goalProgress.listen}
+              delta={model.goalProgress.listen - goalTargets.listen}
+              negative={model.goalProgress.listen < goalTargets.listen}
             />
             <GoalChoice
               id="assertive" selected={goal === 'assertive'} onSelect={setGoal}
               icon="flag" label="Be more assertive"
               desc="Make your recommendation clear upfront"
-              progress={71} delta={+4}
+              progress={model.goalProgress.assertive}
+              delta={model.goalProgress.assertive - goalTargets.assertive}
+              negative={model.goalProgress.assertive < goalTargets.assertive}
             />
             <GoalChoice
               id="clarity" selected={goal === 'clarity'} onSelect={setGoal}
               icon="sparkle" label="Improve clarity"
               desc="Fewer filler words, shorter sentences"
-              progress={78} delta={+14}
+              progress={model.goalProgress.clarity}
+              delta={model.goalProgress.clarity - goalTargets.clarity}
+              negative={model.goalProgress.clarity < goalTargets.clarity}
             />
             <GoalChoice
               id="balance" selected={goal === 'balance'} onSelect={setGoal}
               icon="pulse" label="Balance talk time"
               desc="Under 50% in most meetings"
-              progress={48} delta={-3} negative
+              progress={model.goalProgress.balance}
+              delta={model.goalProgress.balance - goalTargets.balance}
+              negative={model.goalProgress.balance < goalTargets.balance}
             />
           </div>
         </Panel>
@@ -90,53 +108,58 @@ function Profile({ activeGoal, setActiveGoal }) {
           <TrendChart
             title="Talk time balance"
             subtitle="Your share of speaking time. Target ≤ 50%."
-            current="48%" delta="−14pp since Jan"
-            tone="green"
-            data={[72, 68, 70, 65, 66, 61, 58, 55, 54, 51, 49, 48]}
+            current={`${model.avgTalk}%`} delta={`${model.avgTalk <= 50 ? 'at' : 'above'} target`}
+            tone={model.avgTalk <= 50 ? 'green' : 'amber'}
+            data={ramp(model.avgTalk, model.avgTalk + 18)}
             target={50}
             maxY={100}
             yLabel="%"
           />
           <TrendChart
             title="Interruptions per meeting"
-            subtitle="Events where you cut off another speaker."
-            current="1.4" delta="−2.1 since Jan"
-            tone="green"
-            data={[3.5, 3.2, 3.3, 3.0, 2.8, 2.5, 2.2, 2.0, 1.9, 1.7, 1.5, 1.4]}
+            subtitle="Times you cut off another speaker. Target ≤ 1."
+            current={String(model.interruptionsPerMtg)} delta={`${model.totalInterruptions} across ${model.n}`}
+            tone={model.interruptionsPerMtg <= 1 ? 'green' : 'amber'}
+            data={ramp(model.interruptionsPerMtg, model.interruptionsPerMtg + 2)}
             target={1}
-            maxY={4}
+            maxY={Math.max(4, Math.ceil(model.interruptionsPerMtg + 2))}
             yLabel="/mtg"
           />
           <TrendChart
-            title="Sentiment impact on others"
-            subtitle="How your tone shifts the room average."
-            current="+0.12" delta="was −0.08"
-            tone="blue"
-            data={[-0.1, -0.08, -0.06, -0.04, 0, 0.02, 0.04, 0.06, 0.08, 0.09, 0.11, 0.12]}
-            centerZero
-            maxY={0.2}
-            minY={-0.2}
+            title="Listening score"
+            subtitle="Acknowledgement, open questions, not dominating. Target ≥ 70."
+            current={String(model.avgListening)} delta={`${model.avgListening >= 70 ? 'on track' : 'growth area'}`}
+            tone={model.avgListening >= 70 ? 'green' : 'amber'}
+            data={ramp(model.avgListening, Math.max(0, model.avgListening - 22))}
+            target={70}
+            maxY={100}
             yLabel=""
           />
 
           <div>
             <div className="eyebrow" style={{ marginBottom: 8 }}>What the model has learned about you</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-              <Insight tone="blue"
-                title="You pitch-shift up when challenged"
-                detail="Pace +22%, pitch variance +18% within 4s of pushback. Suggests defensiveness."
-                since="detected in 23 meetings"/>
-              <Insight tone="amber"
-                title="You interrupt most with Priya"
-                detail="7 of 12 interruptions this quarter. Not a pattern with other teammates."
-                since="confidence 91%"/>
               <Insight tone="green"
-                title="You summarize better after 30m"
-                detail="Longer meetings show +34% recap quality. Lean on this for long discussions."
-                since="based on 41 meetings"/>
+                title={`${model.strongest.key} is your strongest skill`}
+                detail={`Averaging ${model.strongest.v}/100 across your recent meetings — lean on it.`}
+                since={`based on ${model.n} meetings`}/>
+              <Insight tone="amber"
+                title={`${model.weakest.key} is your growth area`}
+                detail={`Lowest of your three skills at ${model.weakest.v}/100. Set it as a goal to turn up that coach.`}
+                since="derived from scores"/>
+              <Insight tone={model.byInterrupt.analysis.youInterruptedOthers > 0 ? 'amber' : 'green'}
+                title={model.byInterrupt.analysis.youInterruptedOthers > 0
+                  ? `You interrupt most in "${model.byInterrupt.scenario.name}"`
+                  : 'You rarely talk over others'}
+                detail={model.byInterrupt.analysis.youInterruptedOthers > 0
+                  ? `${model.byInterrupt.analysis.youInterruptedOthers} interruption(s) there vs. fewer elsewhere — watch the high-stakes rooms.`
+                  : 'No competitive interruptions detected across your recent meetings.'}
+                since="interruption asymmetry"/>
               <Insight tone="blue"
-                title="Your best decisions come from asking"
-                detail="Meetings with ≥4 questions from you have 2.1× outcome follow-through."
+                title={model.shorterTurnsClearer ? 'Shorter turns track higher clarity' : 'Your clarity holds across turn lengths'}
+                detail={model.shorterTurnsClearer
+                  ? 'Across your meetings, tighter turns correlate with cleaner delivery. Land the point sooner.'
+                  : 'Clarity stays steady whether your turns run short or long.'}
                 since="correlational"/>
             </div>
           </div>

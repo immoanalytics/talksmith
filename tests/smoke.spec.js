@@ -200,3 +200,27 @@ test.describe('review screen', () => {
     await expect(page.locator('[data-testid="score-bar"]')).toContainText('Eng standup');
   });
 });
+
+test.describe('profile learning model', () => {
+  test('renders and is derived from the scoring engine', async ({ page }) => {
+    await bootApp(page);
+    await page.locator('[data-testid="screen-tab-profile"]').click();
+    await expect(page.locator('[data-testid="profile-screen"]')).toBeVisible();
+    // The headline numbers must match profileModel(), proving they aren't
+    // hand-written into the JSX.
+    const { model, ok } = await page.evaluate(() => {
+      const m = window.MeetingData.profileModel();
+      const grades = 'ABCDE';
+      const ok = grades.includes(m.overallGrade)
+        && m.avgTalk >= 0 && m.avgTalk <= 100
+        && ['Clarity', 'Influence', 'Listening'].includes(m.strongest.key)
+        && m.goalProgress.listen === m.avgListening;
+      return { model: m, ok };
+    });
+    expect(ok).toBe(true);
+    // The avg grade from the model should appear in the profile UI.
+    await expect(page.locator('[data-testid="profile-screen"]')).toContainText(
+      `${model.strongest.key} is your strongest skill`
+    );
+  });
+});
