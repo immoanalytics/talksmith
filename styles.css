@@ -1,0 +1,141 @@
+/* Talksmith — Meeting assistant design system */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* Dark mode (default, meeting-friendly) */
+  --bg-0: oklch(0.16 0.005 260);        /* app background */
+  --bg-1: oklch(0.19 0.006 260);        /* panel */
+  --bg-2: oklch(0.22 0.007 260);        /* raised card */
+  --bg-3: oklch(0.26 0.008 260);        /* hover */
+  --bg-inset: oklch(0.14 0.005 260);    /* inset / transcript */
+
+  --line: oklch(0.28 0.008 260 / 0.8);
+  --line-strong: oklch(0.34 0.01 260 / 1);
+  --line-soft: oklch(0.24 0.007 260 / 0.7);
+
+  --ink-0: oklch(0.97 0.003 260);       /* primary text */
+  --ink-1: oklch(0.82 0.006 260);       /* secondary */
+  --ink-2: oklch(0.64 0.008 260);       /* tertiary */
+  --ink-3: oklch(0.48 0.008 260);       /* placeholder */
+
+  --blue: oklch(0.72 0.14 250);
+  --blue-soft: oklch(0.72 0.14 250 / 0.15);
+  --blue-line: oklch(0.72 0.14 250 / 0.35);
+
+  --amber: oklch(0.80 0.14 75);
+  --amber-soft: oklch(0.80 0.14 75 / 0.14);
+  --amber-line: oklch(0.80 0.14 75 / 0.35);
+
+  --rose: oklch(0.70 0.18 18);
+  --rose-soft: oklch(0.70 0.18 18 / 0.15);
+  --rose-line: oklch(0.70 0.18 18 / 0.4);
+
+  --green: oklch(0.78 0.12 160);
+  --green-soft: oklch(0.78 0.12 160 / 0.14);
+
+  --accent: var(--blue);
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+
+  --shadow-pop: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 30px rgba(0,0,0,0.35);
+  --shadow-card: 0 1px 0 rgba(255,255,255,0.03) inset, 0 1px 2px rgba(0,0,0,0.3);
+
+  --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, Menlo, monospace;
+
+  --speed: 180ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+[data-theme="light"] {
+  --bg-0: oklch(0.985 0.003 260);
+  --bg-1: oklch(0.97 0.004 260);
+  --bg-2: oklch(1 0 0);
+  --bg-3: oklch(0.95 0.005 260);
+  --bg-inset: oklch(0.965 0.004 260);
+  --line: oklch(0.88 0.006 260);
+  --line-strong: oklch(0.82 0.008 260);
+  --line-soft: oklch(0.92 0.005 260);
+  --ink-0: oklch(0.20 0.008 260);
+  --ink-1: oklch(0.38 0.008 260);
+  --ink-2: oklch(0.52 0.008 260);
+  --ink-3: oklch(0.68 0.006 260);
+  --blue: oklch(0.55 0.17 250);
+  --blue-soft: oklch(0.55 0.17 250 / 0.08);
+  --blue-line: oklch(0.55 0.17 250 / 0.25);
+  --amber: oklch(0.62 0.15 70);
+  --amber-soft: oklch(0.62 0.15 70 / 0.09);
+  --amber-line: oklch(0.62 0.15 70 / 0.3);
+  --rose: oklch(0.55 0.20 18);
+  --rose-soft: oklch(0.55 0.20 18 / 0.08);
+  --rose-line: oklch(0.55 0.20 18 / 0.3);
+  --green: oklch(0.55 0.14 160);
+  --green-soft: oklch(0.55 0.14 160 / 0.09);
+  --shadow-pop: 0 1px 0 rgba(255,255,255,1) inset, 0 8px 30px rgba(15,20,30,0.1);
+  --shadow-card: 0 1px 2px rgba(15,20,30,0.04);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-0);
+  color: var(--ink-0);
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  font-feature-settings: "ss01", "cv11";
+}
+
+button { font-family: inherit; color: inherit; }
+::selection { background: var(--blue-soft); }
+
+/* scrollbars */
+.scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 4px; }
+.scroll::-webkit-scrollbar-track { background: transparent; }
+.scroll { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+
+/* util */
+.mono { font-family: var(--font-mono); font-feature-settings: "tnum", "zero"; }
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--ink-2);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* animations */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeOut {
+  to { opacity: 0; transform: translateY(-4px); }
+}
+@keyframes pulseEdge {
+  0%, 100% { opacity: 0.0; }
+  50%      { opacity: 1; }
+}
+@keyframes pulseDot {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.15); }
+}
+@keyframes breathe {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+@keyframes levelBar {
+  0%, 100% { transform: scaleY(0.35); }
+  50%      { transform: scaleY(1); }
+}
+@keyframes shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}

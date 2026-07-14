@@ -1,0 +1,16 @@
+{
+  "name": "talksmith",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Real-time meeting coach UI prototype",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:install": "playwright install --with-deps chromium",
+    "components:sync": "node scripts/extract-components.cjs",
+    "components:check": "node scripts/extract-components.cjs --check"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.2"
+  }
+}
