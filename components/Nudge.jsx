@@ -2,8 +2,6 @@
 // Three variants: card | inline | pill (user can toggle via Tweaks)
 
 function Nudge({ nudge, onDismiss, onSnooze, variant = 'card', compact = false }) {
-  const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => { setMounted(true); }, []);
   const [phraseOpen, setPhraseOpen] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
 
@@ -19,12 +17,11 @@ function Nudge({ nudge, onDismiss, onSnooze, variant = 'card', compact = false }
     // Strip the surrounding curly quotes the script uses for typographic flair
     // so the pasted phrase reads naturally in chat / docs.
     const plain = phrase.replace(/^["“]|["”]$/g, '');
-    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1400); };
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(plain).then(done, done);
-    } else {
-      done();
-    }
+    if (!navigator.clipboard?.writeText) return;
+    navigator.clipboard.writeText(plain).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    }, () => {});
   }, [nudge.action]);
 
   if (variant === 'pill') {

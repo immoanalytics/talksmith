@@ -7,12 +7,36 @@ const TWEAKS = /*EDITMODE-BEGIN*/{
 
 // Read a saved preference from localStorage with a fallback. SSR-safe and
 // resilient to localStorage being disabled (Safari private mode, etc).
-function loadPref(key, fallback) {
+function loadPref(key, fallback, allowed) {
   try {
     if (typeof localStorage === 'undefined') return fallback;
     const v = localStorage.getItem(key);
-    return v == null ? fallback : v;
+    if (v == null) return fallback;
+    // A stale or hand-edited value must not put the app in a state no UI
+    // control can represent (e.g. an unknown screen with no tab selected).
+    return allowed && !allowed.includes(v) ? fallback : v;
   } catch { return fallback; }
+}
+
+const SCREENS = ['live', 'overlay', 'review', 'profile'];
+const NUDGE_STYLES = ['card', 'inline', 'pill'];
+
+// Keys typed into a form control belong to that control.
+function isEditableTarget(el) {
+  return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+}
+// Space on a focused button/link must activate it, not the global shortcut.
+function isActivatableTarget(el) {
+  return !!el && (/^(BUTTON|A|SUMMARY)$/.test(el.tagName) || el.getAttribute('role') === 'button');
+}
+
+// Save text as a file download (Export notes).
+function downloadText(filename, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 // First-run theme picks up the system preference; once the user picks a
@@ -28,16 +52,17 @@ function pickInitialTheme() {
 
 function App() {
   const [theme, setTheme] = React.useState(pickInitialTheme);
-  const [nudgeStyle, setNudgeStyle] = React.useState(() => loadPref('talksmith.nudgeStyle', TWEAKS.nudgeStyle));
+  const [nudgeStyle, setNudgeStyle] = React.useState(() => loadPref('talksmith.nudgeStyle', TWEAKS.nudgeStyle, NUDGE_STYLES));
   const [showTweaks, setShowTweaks] = React.useState(false);
   const [editMode, setEditMode] = React.useState(false);
 
-  const [screen, setScreen] = React.useState(() => loadPref('talksmith.screen', TWEAKS.startScreen));
+  const [screen, setScreen] = React.useState(() => loadPref('talksmith.screen', TWEAKS.startScreen, SCREENS));
   const [running, setRunning] = React.useState(true);
   const [speed, setSpeed] = React.useState(1);
   const [muted, setMuted] = React.useState(() => loadPref('talksmith.muted', '0') === '1');
   const [idle, setIdle] = React.useState(false);
-  const [activeGoal, setActiveGoal] = React.useState(() => loadPref('talksmith.goal', 'listen'));
+  const [activeGoal, setActiveGoal] = React.useState(() =>
+    loadPref('talksmith.goal', 'listen', Object.keys(MeetingData.GOAL_COACH_WEIGHTS)));
   const [scenarioId, setScenarioId] = React.useState(() => {
     const v = loadPref('talksmith.scenario', 'q2_roadmap');
     return MeetingData.SCENARIOS[v] ? v : 'q2_roadmap';
@@ -83,20 +108,36 @@ function App() {
   // Space-bar branch always sees the freshest screen.
   const screenRef = React.useRef(screen);
   React.useEffect(() => { screenRef.current = screen; }, [screen]);
+  // Latest sim, so overlay shortcuts act on the cue currently on screen.
+  const simRef = React.useRef(sim);
+  simRef.current = sim;
 
   React.useEffect(() => {
     const onKey = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (isEditableTarget(e.target)) return;
+      const cur = screenRef.current;
+      const key = e.key.toLowerCase();
       if (e.metaKey || e.ctrlKey) {
-        if (e.key === '1') { setScreen('live'); e.preventDefault(); }
-        if (e.key === '2') { setScreen('overlay'); e.preventDefault(); }
-        if (e.key === '3') { setScreen('review'); e.preventDefault(); }
-        if (e.key === '4') { setScreen('profile'); e.preventDefault(); }
-        if (e.key.toLowerCase() === 'm') { setMuted(m => !m); e.preventDefault(); }
+        const idx = ['1', '2', '3', '4'].indexOf(e.key);
+        if (idx >= 0) { setScreen(SCREENS[idx]); e.preventDefault(); }
+        else if (key === 'm') { setMuted(m => !m); e.preventDefault(); }
+        else if (key === ',') { setShowTweaks(s => !s); e.preventDefault(); }
+        else if (key === 'e' && cur === 'overlay') { setScreen('live'); e.preventDefault(); }
+      } else if (e.altKey) {
+        return;
       } else if (e.key === ' ') {
-        const cur = screenRef.current;
+        if (isActivatableTarget(e.target)) return;
         if (cur === 'live' || cur === 'overlay') setRunning(r => !r);
         if (cur === 'review') setReviewPlaying(p => !p);
+        e.preventDefault();
+      } else if (e.key === 'Escape') {
+        setShowTweaks(false);
+      } else if (cur === 'overlay' && (key === 's' || key === 'x')) {
+        // Compact overlay: act on the top cue without reaching for the mouse.
+        const top = simRef.current.activeNudges[0];
+        if (!top) return;
+        if (key === 's') simRef.current.snoozeNudge(top.id);
+        else simRef.current.dismissNudge(top.id);
         e.preventDefault();
       }
     };
@@ -117,6 +158,19 @@ function App() {
     window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { [key]: val } }, '*');
   };
 
+  const notesFor = () => MeetingData.buildReviewNotes(sim.scenario);
+  const exportNotes = () => downloadText(`talksmith-${sim.scenario.id}-review.md`, notesFor());
+  // Share = copy the notes to the clipboard, with brief confirmation. Only
+  // claim success when the write actually succeeded.
+  const [shared, setShared] = React.useState(false);
+  const shareReview = () => {
+    if (!navigator.clipboard?.writeText) return;
+    navigator.clipboard.writeText(notesFor()).then(() => {
+      setShared(true);
+      setTimeout(() => setShared(false), 1400);
+    }, () => {});
+  };
+
   const meetingState = screen === 'live' || screen === 'overlay'
     ? { recording: running && !idle, timecode: sim.tc }
     : null;
@@ -128,6 +182,8 @@ function App() {
         activeScreen={screen}
         onScreenChange={setScreen}
         onSettings={() => setShowTweaks(s => !s)}
+        muted={muted}
+        onToggleMute={() => setMuted(m => !m)}
       />
 
       <div style={{
@@ -154,7 +210,7 @@ function App() {
             <Chip tone="neutral">Compact mode</Chip>
             <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>Shown while you screen-share</span>
             <div style={{ flex: 1 }}/>
-            <span className="mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>⌘E expands · ⌘⇧H hides</span>
+            <span className="mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>⌘E expands</span>
           </>
         )}
         {screen === 'review' && (
@@ -164,14 +220,18 @@ function App() {
               {MeetingData.fmtTime(sim.scenario.duration)} · {sim.scenario.participants.length} participants · {sim.scenario.timeline.length} moments flagged
             </span>
             <div style={{ flex: 1 }}/>
-            <button style={subBtn(false)}>Share review</button>
-            <button style={subBtn(false)}>Export notes</button>
+            <button data-testid="share-review" onClick={shareReview} style={subBtn(shared)}>
+              {I(shared ? 'check' : 'copy', { size: 12 })}{shared ? 'Copied' : 'Share review'}
+            </button>
+            <button data-testid="export-notes" onClick={exportNotes} style={subBtn(false)}>Export notes</button>
           </>
         )}
         {screen === 'profile' && (
           <>
             <Chip tone="neutral">Personal model</Chip>
-            <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>Last updated 14m ago · 142 meetings analyzed</span>
+            <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>
+              {Object.keys(MeetingData.SCENARIOS).length} meetings analyzed
+            </span>
             <div style={{ flex: 1 }}/>
             <button style={subBtn(false)}>Explain model</button>
           </>
@@ -179,7 +239,7 @@ function App() {
       </div>
 
       {idle && screen === 'live' ? (
-        <IdleState onStart={() => setIdle(false)}/>
+        <IdleState scenario={sim.scenario} onStart={() => setIdle(false)} onReview={() => setScreen('review')}/>
       ) : screen === 'live' ? (
         <LiveDashboard sim={sim} running={running} onToggleRun={() => setRunning(r => !r)}
           muted={muted} onToggleMute={() => setMuted(m => !m)}
@@ -203,7 +263,6 @@ function App() {
         <span>Talksmith v0.4.2</span><span>·</span>
         <span>On-device audio · cloud analysis</span>
         <div style={{ flex: 1 }}/>
-        <span>⌘K commands</span><span>·</span>
         <span>⌘, settings</span><span>·</span>
         <span>⌘M mute coaching</span>
       </div>
@@ -232,7 +291,7 @@ function subBtn(active) {
   };
 }
 
-function IdleState({ onStart }) {
+function IdleState({ scenario, onStart, onReview }) {
   return (
     <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 40, background: 'var(--bg-0)' }}>
       <div style={{ maxWidth: 420, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
@@ -250,7 +309,7 @@ function IdleState({ onStart }) {
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 6, letterSpacing: '-0.01em' }}>No active meeting</div>
           <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>
-            Talksmith is watching your calendar. Your next meeting <b style={{ color: 'var(--ink-1)' }}>Q2 roadmap sync</b> starts in 3 minutes — I'll join automatically, or click below to start now.
+            Talksmith is watching your calendar. Your next meeting <b style={{ color: 'var(--ink-1)' }}>{scenario.name}</b> starts in 3 minutes — I'll join automatically, or click below to start now.
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -258,7 +317,7 @@ function IdleState({ onStart }) {
             border: '1px solid var(--ink-0)', background: 'var(--ink-0)', color: 'var(--bg-0)',
             fontSize: 12.5, fontWeight: 500, padding: '8px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
           }}>Start listening now</button>
-          <button style={{
+          <button onClick={onReview} style={{
             border: '1px solid var(--line)', background: 'transparent', color: 'var(--ink-1)',
             fontSize: 12.5, padding: '8px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
           }}>Review last meeting</button>
@@ -271,7 +330,7 @@ function IdleState({ onStart }) {
           <div className="eyebrow" style={{ marginBottom: 8 }}>Today's meetings</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {[
-              { t: '2:00 PM', n: 'Q2 roadmap sync', ppl: 4, next: true },
+              { t: '2:00 PM', n: scenario.name, ppl: scenario.participants.length, next: true },
               { t: '3:30 PM', n: '1:1 with Priya',  ppl: 2 },
               { t: '4:30 PM', n: 'Design review',   ppl: 6 },
             ].map((m, i) => (
@@ -380,4 +439,36 @@ function segBtn(active) {
   };
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+// Last line of defence: a render error anywhere would otherwise unmount the
+// whole tree and leave a blank window. Show what broke and offer a reset.
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error('Talksmith crashed:', error, info.componentStack); }
+  render() {
+    if (!this.state.error) return this.props.children;
+    const reset = () => {
+      try { Object.keys(localStorage).filter(k => k.startsWith('talksmith.')).forEach(k => localStorage.removeItem(k)); } catch {}
+      location.reload();
+    };
+    return (
+      <div role="alert" data-testid="crash-screen" style={{
+        height: '100vh', display: 'grid', placeItems: 'center', padding: 24,
+        background: 'var(--bg-0)', color: 'var(--ink-0)',
+      }}>
+        <div style={{ maxWidth: 440, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>Something went wrong</div>
+          <div className="mono" style={{ fontSize: 11.5, color: 'var(--rose)', whiteSpace: 'pre-wrap' }}>
+            {String(this.state.error && this.state.error.message || this.state.error)}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => location.reload()} style={subBtn(true)}>Reload</button>
+            <button onClick={reset} style={subBtn(false)}>Reset preferences & reload</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<ErrorBoundary><App/></ErrorBoundary>);

@@ -517,8 +517,8 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
               <div className="eyebrow" style={{ marginBottom: 8 }}>Meeting goals</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <GoalRow label="Speak less than 50%" current={sim.metrics.yourTalkPct} target={50} invert/>
-                <GoalRow label="Ask ≥ 3 questions" current={Math.floor(sim.t / 60)} target={3}/>
-                <GoalRow label="Acknowledge objections" current={sim.t > 102 ? 1 : 0} target={2}/>
+                <GoalRow label="Ask ≥ 3 questions" current={sim.metrics.questionCount} target={3}/>
+                <GoalRow label="Acknowledge objections" current={sim.metrics.acknowledged} target={sim.metrics.objections}/>
               </div>
             </div>
           </CoachBlock>
@@ -544,8 +544,9 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
 }
 
 function GoalRow({ label, current, target, invert = false }) {
-  const ratio = invert
-    ? Math.max(0, 1 - current / target)
+  // target 0 (e.g. no objections raised yet) means there's nothing to do.
+  const ratio = target === 0 ? 1
+    : invert ? Math.max(0, 1 - current / target)
     : Math.min(1, current / target);
   const done = invert ? current <= target : current >= target;
   return (

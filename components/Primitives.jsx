@@ -9,7 +9,7 @@ const appStyles = {
 };
 
 // Title bar — custom app window chrome (not macOS; our own)
-function TitleBar({ title, subtitle, meetingState, onSettings, activeScreen, onScreenChange }) {
+function TitleBar({ title, subtitle, meetingState, onSettings, activeScreen, onScreenChange, muted, onToggleMute }) {
   const screens = [
     { id: 'live', label: 'Live', key: '1' },
     { id: 'overlay', label: 'Compact', key: '2' },
@@ -93,7 +93,11 @@ function TitleBar({ title, subtitle, meetingState, onSettings, activeScreen, onS
 
       {/* Right */}
       <div style={{ display: 'flex', gap: 4 }}>
-        <IconButton tip="Mute coaching (⌘M)">{I('bell', { size: 13 })}</IconButton>
+        <span data-testid="titlebar-mute">
+          <IconButton tip={muted ? 'Unmute coaching (⌘M)' : 'Mute coaching (⌘M)'} onClick={onToggleMute} active={muted} danger={muted}>
+            {I(muted ? 'bellOff' : 'bell', { size: 13 })}
+          </IconButton>
+        </span>
         <span data-testid="settings-button">
           <IconButton tip="Settings" onClick={onSettings}>{I('settings', { size: 13 })}</IconButton>
         </span>
@@ -212,7 +216,7 @@ function Chip({ children, tone = 'neutral', size = 'md' }) {
     amber: { bg: 'var(--amber-soft)', color: 'var(--amber)', border: 'var(--amber-line)' },
     rose: { bg: 'var(--rose-soft)', color: 'var(--rose)', border: 'var(--rose-line)' },
     green: { bg: 'var(--green-soft)', color: 'var(--green)', border: 'oklch(0.78 0.12 160 / 0.35)' },
-  }[tone];
+  }[tone] || { bg: 'var(--bg-inset)', color: 'var(--ink-1)', border: 'var(--line)' };
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 5,
