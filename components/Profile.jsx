@@ -124,6 +124,8 @@ function Profile({ activeGoal, setActiveGoal, range, setRange, explainOpen, onCl
             })}
           </div>
         </Panel>
+
+        <PracticeSessions/>
       </div>
 
       {/* RIGHT — trends */}
@@ -321,6 +323,62 @@ function ExplainModel({ model, range, activeGoal, onClose }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Saved live-mic practice sessions (this browser only), newest first, with
+// the numbers that matter for solo practice. Deleting is immediate.
+function PracticeSessions() {
+  const [sessions, setSessions] = React.useState(() => MeetingData.loadSessions());
+  const rows = React.useMemo(() => sessions.map(x => ({
+    ...x, prompt: MeetingData.practicePrompt(x.promptId), stats: MeetingData.sessionStats(x.lines),
+  })), [sessions]);
+  const remove = (id) => { MeetingData.deleteSession(id); setSessions(MeetingData.loadSessions()); };
+  const avgClarity = rows.length ? Math.round(rows.reduce((a, r) => a + r.stats.clarity, 0) / rows.length) : 0;
+  const fmtDate = (iso) => {
+    try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }
+    catch { return ''; }
+  };
+  const cell = { fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-1)', textAlign: 'right' };
+
+  return (
+    <Panel eyebrow="Practice" title="Mic sessions" dense style={{ minHeight: 0, flex: 1 }}
+      right={rows.length ? <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>avg clarity {avgClarity}</span> : null}>
+      <div data-testid="practice-sessions" className="scroll" style={{ overflowY: 'auto', padding: '6px 12px 10px', minHeight: 0 }}>
+        {rows.length === 0 ? (
+          <div style={{ fontSize: 11.5, color: 'var(--ink-2)', padding: '8px 2px', lineHeight: 1.5 }}>
+            No saved practice yet. In settings choose <b>Live mic (practice)</b>, speak, then press <b>Save session</b>.
+            Sessions stay in this browser.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto auto', columnGap: 10, rowGap: 6, alignItems: 'center' }}>
+            <span className="eyebrow">Session</span>
+            <span className="eyebrow" style={{ textAlign: 'right' }}>Time</span>
+            <span className="eyebrow" style={{ textAlign: 'right' }}>Clarity</span>
+            <span className="eyebrow" style={{ textAlign: 'right' }}>Fillers</span>
+            <span className="eyebrow" style={{ textAlign: 'right' }}>Pace</span>
+            <span/>
+            {rows.map(r => (
+              <React.Fragment key={r.id}>
+                <span data-testid="practice-session" style={{ fontSize: 12, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  title={r.lines.map(l => l.txt).join(' ')}>
+                  <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-3)', marginRight: 6 }}>{fmtDate(r.savedAt)}</span>
+                  {r.prompt.title}
+                </span>
+                <span style={cell}>{r.stats.durationSec}s</span>
+                <span style={{ ...cell, color: r.stats.clarity >= 75 ? 'var(--green)' : r.stats.clarity >= 60 ? 'var(--amber)' : 'var(--rose)' }}>{r.stats.clarity}</span>
+                <span style={cell}>{r.stats.fillerRate}/100w</span>
+                <span style={cell}>{r.stats.wpm}wpm</span>
+                <button onClick={() => remove(r.id)} aria-label={`Delete session from ${fmtDate(r.savedAt)}`} title="Delete"
+                  style={{ border: 'none', background: 'transparent', color: 'var(--ink-3)', cursor: 'pointer', padding: 2, display: 'grid', placeItems: 'center' }}>
+                  {I('x', { size: 11 })}
+                </button>
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+      </div>
+    </Panel>
   );
 }
 

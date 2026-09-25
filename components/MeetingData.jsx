@@ -899,12 +899,14 @@ function deriveCoaching(lines, participants = MIC_PARTICIPANTS) {
 }
 
 // A scenario object for a live mic session so far.
-function micScenario(lines) {
+function micScenario(lines, promptId = 'free') {
   const last = lines[lines.length - 1];
+  const prompt = practicePrompt(promptId);
   return {
     id: MIC_SCENARIO_ID,
     name: 'Live mic practice',
-    summary: 'Your own speech, transcribed by your browser',
+    summary: prompt.id === 'free' ? 'Your own speech, transcribed by your browser' : prompt.title,
+    prompt,
     daysAgo: 0,
     openEnded: true, // the clock runs as long as you talk; it never loops
     duration: Math.max(60, last ? Math.ceil(last.t + 15) : 0),
@@ -914,6 +916,64 @@ function micScenario(lines) {
     script: lines,
     ...deriveCoaching(lines),
   };
+}
+
+// Practice prompts for solo mic sessions. `targetSec` is the time goal the
+// Outcomes coach tracks (null = open-ended).
+const PRACTICE_PROMPTS = [
+  { id: 'free', title: 'Free practice', text: 'Talk through whatever is on your mind — a plan, an update, a pitch.', targetSec: null },
+  { id: 'pitch', title: 'Pitch your top priority', text: 'Make the case for your single most important priority this quarter. Lead with the recommendation.', targetSec: 60 },
+  { id: 'pushback', title: 'Push back on a deadline', text: 'A stakeholder wants it two weeks early. Say no — kindly, clearly, with an alternative.', targetSec: 90 },
+  { id: 'feedback', title: 'Give tough feedback', text: 'Tell a strong teammate that how they ran the last project hurt the team. Be specific and kind.', targetSec: 120 },
+  { id: 'decision', title: 'Summarize a decision', text: 'Close a meeting: state what was decided, who owns what, and by when.', targetSec: 45 },
+];
+function practicePrompt(id) {
+  return PRACTICE_PROMPTS.find(p => p.id === id) || PRACTICE_PROMPTS[0];
+}
+
+// Headline numbers for one practice session (Profile's practice panel).
+function sessionStats(lines) {
+  const a = analyzeTranscript(lines, MIC_PARTICIPANTS, 'you');
+  const s = scoreFromAnalysis(a);
+  const last = lines[lines.length - 1];
+  return {
+    words: a.yourWords,
+    durationSec: last ? Math.round(last.t - lines[0].t + (wordCount(last.txt) / SPEAK_WPM) * 60) : 0,
+    clarity: s.clarity,
+    fillerRate: +a.fillerRate.toFixed(1),
+    hedgeRate: +a.hedgeRate.toFixed(1),
+    wpm: Math.round(micWpm(lines)),
+  };
+}
+
+// Saved practice sessions live only in this browser (localStorage), newest
+// first, capped so storage can't grow without bound.
+const SESSIONS_KEY = 'talksmith.sessions';
+const MAX_SESSIONS = 50;
+function loadSessions() {
+  try {
+    const v = JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]');
+    return Array.isArray(v)
+      ? v.filter(x => x && typeof x.id === 'string' && Array.isArray(x.lines) && x.lines.length)
+      : [];
+  } catch { return []; }
+}
+function writeSessions(list) {
+  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(list.slice(0, MAX_SESSIONS))); return true; }
+  catch { return false; }
+}
+function saveSession(lines, promptId = 'free', now = new Date()) {
+  if (!lines.length) return null;
+  const session = {
+    id: `s-${now.getTime()}`,
+    savedAt: now.toISOString(),
+    promptId: practicePrompt(promptId).id,
+    lines: lines.map(l => ({ t: l.t, s: 'you', txt: l.txt })),
+  };
+  return writeSessions([session, ...loadSessions()]) ? session : null;
+}
+function deleteSession(id) {
+  writeSessions(loadSessions().filter(x => x.id !== id));
 }
 
 // Letter grade for a 0–100 composite.
@@ -1025,5 +1085,6 @@ window.MeetingData = {
   analyzeTranscript, scoreFromAnalysis, scoreScenario, nudgeImpact, profileModel,
   PROFILE_RANGES, gradeFor, OVERALL_WEIGHTS,
   MIC_SCENARIO_ID, micScenario, deriveCoaching, micWpm,
+  PRACTICE_PROMPTS, practicePrompt, sessionStats, loadSessions, saveSession, deleteSession,
   buildReviewNotes,
 };

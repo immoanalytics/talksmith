@@ -1449,12 +1449,14 @@ function deriveCoaching(lines, participants = MIC_PARTICIPANTS) {
 }
 
 // A scenario object for a live mic session so far.
-function micScenario(lines) {
+function micScenario(lines, promptId = 'free') {
   const last = lines[lines.length - 1];
+  const prompt = practicePrompt(promptId);
   return {
     id: MIC_SCENARIO_ID,
     name: 'Live mic practice',
-    summary: 'Your own speech, transcribed by your browser',
+    summary: prompt.id === 'free' ? 'Your own speech, transcribed by your browser' : prompt.title,
+    prompt,
     daysAgo: 0,
     openEnded: true, // the clock runs as long as you talk; it never loops
     duration: Math.max(60, last ? Math.ceil(last.t + 15) : 0),
@@ -1464,6 +1466,64 @@ function micScenario(lines) {
     script: lines,
     ...deriveCoaching(lines),
   };
+}
+
+// Practice prompts for solo mic sessions. `targetSec` is the time goal the
+// Outcomes coach tracks (null = open-ended).
+const PRACTICE_PROMPTS = [
+  { id: 'free', title: 'Free practice', text: 'Talk through whatever is on your mind — a plan, an update, a pitch.', targetSec: null },
+  { id: 'pitch', title: 'Pitch your top priority', text: 'Make the case for your single most important priority this quarter. Lead with the recommendation.', targetSec: 60 },
+  { id: 'pushback', title: 'Push back on a deadline', text: 'A stakeholder wants it two weeks early. Say no — kindly, clearly, with an alternative.', targetSec: 90 },
+  { id: 'feedback', title: 'Give tough feedback', text: 'Tell a strong teammate that how they ran the last project hurt the team. Be specific and kind.', targetSec: 120 },
+  { id: 'decision', title: 'Summarize a decision', text: 'Close a meeting: state what was decided, who owns what, and by when.', targetSec: 45 },
+];
+function practicePrompt(id) {
+  return PRACTICE_PROMPTS.find(p => p.id === id) || PRACTICE_PROMPTS[0];
+}
+
+// Headline numbers for one practice session (Profile's practice panel).
+function sessionStats(lines) {
+  const a = analyzeTranscript(lines, MIC_PARTICIPANTS, 'you');
+  const s = scoreFromAnalysis(a);
+  const last = lines[lines.length - 1];
+  return {
+    words: a.yourWords,
+    durationSec: last ? Math.round(last.t - lines[0].t + (wordCount(last.txt) / SPEAK_WPM) * 60) : 0,
+    clarity: s.clarity,
+    fillerRate: +a.fillerRate.toFixed(1),
+    hedgeRate: +a.hedgeRate.toFixed(1),
+    wpm: Math.round(micWpm(lines)),
+  };
+}
+
+// Saved practice sessions live only in this browser (localStorage), newest
+// first, capped so storage can't grow without bound.
+const SESSIONS_KEY = 'talksmith.sessions';
+const MAX_SESSIONS = 50;
+function loadSessions() {
+  try {
+    const v = JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]');
+    return Array.isArray(v)
+      ? v.filter(x => x && typeof x.id === 'string' && Array.isArray(x.lines) && x.lines.length)
+      : [];
+  } catch { return []; }
+}
+function writeSessions(list) {
+  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(list.slice(0, MAX_SESSIONS))); return true; }
+  catch { return false; }
+}
+function saveSession(lines, promptId = 'free', now = new Date()) {
+  if (!lines.length) return null;
+  const session = {
+    id: `s-${now.getTime()}`,
+    savedAt: now.toISOString(),
+    promptId: practicePrompt(promptId).id,
+    lines: lines.map(l => ({ t: l.t, s: 'you', txt: l.txt })),
+  };
+  return writeSessions([session, ...loadSessions()]) ? session : null;
+}
+function deleteSession(id) {
+  writeSessions(loadSessions().filter(x => x.id !== id));
 }
 
 // Letter grade for a 0–100 composite.
@@ -1575,6 +1635,7 @@ window.MeetingData = {
   analyzeTranscript, scoreFromAnalysis, scoreScenario, nudgeImpact, profileModel,
   PROFILE_RANGES, gradeFor, OVERALL_WEIGHTS,
   MIC_SCENARIO_ID, micScenario, deriveCoaching, micWpm,
+  PRACTICE_PROMPTS, practicePrompt, sessionStats, loadSessions, saveSession, deleteSession,
   buildReviewNotes,
 };
 
@@ -1826,7 +1887,7 @@ window.Nudge = Nudge;
 // === components/LiveDashboard.jsx ===
 // LiveDashboard.jsx — the main screen
 
-function Transcript({ transcript, participants, t, interim = '' }) {
+function Transcript({ transcript, participants, t, interim = '', prompt = null }) {
   const scrollRef = React.useRef();
   React.useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -1893,11 +1954,21 @@ function Transcript({ transcript, participants, t, interim = '' }) {
           {interim}<TypingCaret />
         </div>
       )}
-      {transcript.length === 0 && !interim && (
+      {transcript.length === 0 && !interim && (prompt ? (
+        <div data-testid="practice-prompt-card" style={{
+          margin: '12px 0', padding: 14, borderRadius: 8,
+          background: 'var(--bg-inset)', border: '1px solid var(--line-soft)',
+        }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>
+            {prompt.title}{prompt.targetSec ? ` · aim for ${prompt.targetSec}s` : ''}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--ink-1)', lineHeight: 1.5 }}>{prompt.text}</div>
+        </div>
+      ) : (
         <div style={{ padding: 20, textAlign: 'center', color: 'var(--ink-3)', fontSize: 12 }}>
           Waiting for audio…
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -2170,7 +2241,8 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
           </div>
         }
       >
-        <Transcript transcript={sim.transcript} participants={sim.participants} t={sim.t} interim={interim}/>
+        <Transcript transcript={sim.transcript} participants={sim.participants} t={sim.t} interim={interim}
+          prompt={sim.scenario.prompt || null}/>
       </Panel>
 
       {/* CENTER — Guidance, from the head coach */}
@@ -2361,17 +2433,26 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
             </div>
           </CoachBlock>
 
-          {/* Outcomes coach — meeting arc */}
+          {/* Outcomes coach — meeting arc. Solo practice tracks only the
+              prompt's time budget (and shows nothing for free practice). */}
+          {(!solo || sim.scenario.prompt?.targetSec) && (
           <CoachBlock name="Outcomes coach" scope="watching the arc">
             <div>
-              <div className="eyebrow" style={{ marginBottom: 8 }}>Meeting goals</div>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>{solo ? 'Practice goal' : 'Meeting goals'}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {!solo && <GoalRow label="Speak less than 50%" current={sim.metrics.yourTalkPct} target={50} invert/>}
-                <GoalRow label="Ask ≥ 3 questions" current={sim.metrics.questionCount} target={3}/>
-                {!solo && <GoalRow label="Acknowledge objections" current={sim.metrics.acknowledged} target={sim.metrics.objections}/>}
+                {solo ? (
+                  <TimeGoalRow elapsed={Math.floor(sim.t)} target={sim.scenario.prompt.targetSec}/>
+                ) : (
+                  <>
+                    <GoalRow label="Speak less than 50%" current={sim.metrics.yourTalkPct} target={50} invert/>
+                    <GoalRow label="Ask ≥ 3 questions" current={sim.metrics.questionCount} target={3}/>
+                    <GoalRow label="Acknowledge objections" current={sim.metrics.acknowledged} target={sim.metrics.objections}/>
+                  </>
+                )}
               </div>
             </div>
           </CoachBlock>
+          )}
 
           {/* Head coach — graceful degradation */}
           {sim.metrics.audioQuality < 0.6 && (
@@ -2408,6 +2489,22 @@ function GoalRow({ label, current, target, invert = false }) {
         </span>
       </div>
       <Meter value={ratio * 100} color={done ? 'var(--green)' : 'var(--blue)'} height={3}/>
+    </div>
+  );
+}
+
+// Practice time budget: fills toward the target, turns amber once you run over.
+function TimeGoalRow({ elapsed, target }) {
+  const over = elapsed > target;
+  return (
+    <div data-testid="time-goal">
+      <div style={{ display: 'flex', fontSize: 11.5, marginBottom: 3 }}>
+        <span style={{ flex: 1, color: 'var(--ink-1)' }}>Make your point within {target}s</span>
+        <span className="mono" style={{ color: over ? 'var(--amber)' : 'var(--ink-2)' }}>
+          {elapsed}s / {target}s
+        </span>
+      </div>
+      <Meter value={Math.min(100, (elapsed / target) * 100)} color={over ? 'var(--amber)' : 'var(--blue)'} height={3}/>
     </div>
   );
 }
@@ -3225,6 +3322,8 @@ function Profile({ activeGoal, setActiveGoal, range, setRange, explainOpen, onCl
             })}
           </div>
         </Panel>
+
+        <PracticeSessions/>
       </div>
 
       {/* RIGHT — trends */}
@@ -3422,6 +3521,62 @@ function ExplainModel({ model, range, activeGoal, onClose }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Saved live-mic practice sessions (this browser only), newest first, with
+// the numbers that matter for solo practice. Deleting is immediate.
+function PracticeSessions() {
+  const [sessions, setSessions] = React.useState(() => MeetingData.loadSessions());
+  const rows = React.useMemo(() => sessions.map(x => ({
+    ...x, prompt: MeetingData.practicePrompt(x.promptId), stats: MeetingData.sessionStats(x.lines),
+  })), [sessions]);
+  const remove = (id) => { MeetingData.deleteSession(id); setSessions(MeetingData.loadSessions()); };
+  const avgClarity = rows.length ? Math.round(rows.reduce((a, r) => a + r.stats.clarity, 0) / rows.length) : 0;
+  const fmtDate = (iso) => {
+    try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }
+    catch { return ''; }
+  };
+  const cell = { fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-1)', textAlign: 'right' };
+
+  return (
+    <Panel eyebrow="Practice" title="Mic sessions" dense style={{ minHeight: 0, flex: 1 }}
+      right={rows.length ? <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>avg clarity {avgClarity}</span> : null}>
+      <div data-testid="practice-sessions" className="scroll" style={{ overflowY: 'auto', padding: '6px 12px 10px', minHeight: 0 }}>
+        {rows.length === 0 ? (
+          <div style={{ fontSize: 11.5, color: 'var(--ink-2)', padding: '8px 2px', lineHeight: 1.5 }}>
+            No saved practice yet. In settings choose <b>Live mic (practice)</b>, speak, then press <b>Save session</b>.
+            Sessions stay in this browser.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto auto', columnGap: 10, rowGap: 6, alignItems: 'center' }}>
+            <span className="eyebrow">Session</span>
+            <span className="eyebrow" style={{ textAlign: 'right' }}>Time</span>
+            <span className="eyebrow" style={{ textAlign: 'right' }}>Clarity</span>
+            <span className="eyebrow" style={{ textAlign: 'right' }}>Fillers</span>
+            <span className="eyebrow" style={{ textAlign: 'right' }}>Pace</span>
+            <span/>
+            {rows.map(r => (
+              <React.Fragment key={r.id}>
+                <span data-testid="practice-session" style={{ fontSize: 12, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  title={r.lines.map(l => l.txt).join(' ')}>
+                  <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-3)', marginRight: 6 }}>{fmtDate(r.savedAt)}</span>
+                  {r.prompt.title}
+                </span>
+                <span style={cell}>{r.stats.durationSec}s</span>
+                <span style={{ ...cell, color: r.stats.clarity >= 75 ? 'var(--green)' : r.stats.clarity >= 60 ? 'var(--amber)' : 'var(--rose)' }}>{r.stats.clarity}</span>
+                <span style={cell}>{r.stats.fillerRate}/100w</span>
+                <span style={cell}>{r.stats.wpm}wpm</span>
+                <button onClick={() => remove(r.id)} aria-label={`Delete session from ${fmtDate(r.savedAt)}`} title="Delete"
+                  style={{ border: 'none', background: 'transparent', color: 'var(--ink-3)', cursor: 'pointer', padding: 2, display: 'grid', placeItems: 'center' }}>
+                  {I('x', { size: 11 })}
+                </button>
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+      </div>
+    </Panel>
   );
 }
 
@@ -3758,10 +3913,19 @@ function App() {
   // so line timestamps match when you spoke.
   const tRef = React.useRef(0);
   const mic = useSpeechTranscript(() => tRef.current);
+  const [promptId, setPromptId] = React.useState(() =>
+    loadPref('talksmith.practicePrompt', 'free', MeetingData.PRACTICE_PROMPTS.map(p => p.id)));
+  React.useEffect(() => { try { localStorage.setItem('talksmith.practicePrompt', promptId); } catch {} }, [promptId]);
   const micScenario = React.useMemo(
-    () => (micMode ? MeetingData.micScenario(mic.lines) : null),
-    [micMode, mic.lines]
+    () => (micMode ? MeetingData.micScenario(mic.lines, promptId) : null),
+    [micMode, mic.lines, promptId]
   );
+  // Saving is explicit: nothing is stored unless you press Save. `savedLines`
+  // remembers which transcript was saved so the button can say so.
+  const [savedLines, setSavedLines] = React.useState(null);
+  const saveMicSession = () => {
+    if (MeetingData.saveSession(mic.lines, promptId)) setSavedLines(mic.lines);
+  };
   const sim = MeetingData.useMeetingSim({
     running: micMode ? mic.listening : running && !idle && screenWantsSim,
     speed: micMode ? 1 : speed, activeGoal, scenarioId, scenario: micScenario,
@@ -3886,16 +4050,37 @@ function App() {
         {screen === 'live' && micMode && (
           <>
             <span data-testid="active-scenario-name"><Chip tone="neutral">{sim.scenario.name}</Chip></span>
+            {!mic.listening && mic.lines.length === 0 && (
+              <select data-testid="practice-prompt" value={promptId} onChange={(e) => setPromptId(e.target.value)}
+                aria-label="Practice prompt"
+                style={{
+                  fontFamily: 'inherit', fontSize: 11.5, padding: '3px 6px',
+                  background: 'var(--bg-inset)', color: 'var(--ink-0)',
+                  border: '1px solid var(--line)', borderRadius: 5, cursor: 'pointer',
+                }}>
+                {MeetingData.PRACTICE_PROMPTS.map(p => (
+                  <option key={p.id} value={p.id}>{p.title}{p.targetSec ? ` · ${p.targetSec}s` : ''}</option>
+                ))}
+              </select>
+            )}
             <span data-testid="mic-status" data-status={mic.status} style={{ fontSize: 12, color: mic.status === 'denied' || mic.status === 'error' || mic.status === 'unsupported' ? 'var(--rose)' : 'var(--ink-2)' }}>
               {mic.status === 'unsupported' ? 'Live mic needs a browser with speech recognition (Chrome, Edge or Safari).'
                 : mic.status === 'denied' ? 'Microphone access was blocked — allow it in the address bar, then press Start.'
                 : mic.status === 'error' ? `Speech recognition stopped: ${mic.error}`
                 : mic.listening ? 'Listening — speak as you would in the meeting.'
-                : 'Press Start and speak. Your browser does the transcription (in Chrome, audio goes to Google); nothing is stored.'}
+                : mic.lines.length ? 'Stopped. Save keeps this session in this browser only.'
+                : 'Press Start and speak. Your browser transcribes (in Chrome, audio goes to Google); nothing is saved unless you press Save.'}
             </span>
             <div style={{ flex: 1 }}/>
             {mic.lines.length > 0 && !mic.listening && (
-              <button onClick={() => { mic.clear(); sim.setT(0); }} style={subBtn(false)}>Clear</button>
+              <>
+                <button data-testid="save-session" onClick={saveMicSession}
+                  disabled={savedLines === mic.lines} style={subBtn(savedLines === mic.lines)}>
+                  {savedLines === mic.lines && I('check', { size: 12 })}
+                  {savedLines === mic.lines ? 'Saved' : 'Save session'}
+                </button>
+                <button onClick={() => { mic.clear(); sim.setT(0); }} style={subBtn(false)}>Clear</button>
+              </>
             )}
             <button data-testid="mic-toggle" onClick={toggleRun} disabled={mic.status === 'unsupported'}
               style={subBtn(mic.listening)}>

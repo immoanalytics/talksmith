@@ -164,10 +164,19 @@ function App() {
   // so line timestamps match when you spoke.
   const tRef = React.useRef(0);
   const mic = useSpeechTranscript(() => tRef.current);
+  const [promptId, setPromptId] = React.useState(() =>
+    loadPref('talksmith.practicePrompt', 'free', MeetingData.PRACTICE_PROMPTS.map(p => p.id)));
+  React.useEffect(() => { try { localStorage.setItem('talksmith.practicePrompt', promptId); } catch {} }, [promptId]);
   const micScenario = React.useMemo(
-    () => (micMode ? MeetingData.micScenario(mic.lines) : null),
-    [micMode, mic.lines]
+    () => (micMode ? MeetingData.micScenario(mic.lines, promptId) : null),
+    [micMode, mic.lines, promptId]
   );
+  // Saving is explicit: nothing is stored unless you press Save. `savedLines`
+  // remembers which transcript was saved so the button can say so.
+  const [savedLines, setSavedLines] = React.useState(null);
+  const saveMicSession = () => {
+    if (MeetingData.saveSession(mic.lines, promptId)) setSavedLines(mic.lines);
+  };
   const sim = MeetingData.useMeetingSim({
     running: micMode ? mic.listening : running && !idle && screenWantsSim,
     speed: micMode ? 1 : speed, activeGoal, scenarioId, scenario: micScenario,
@@ -292,16 +301,37 @@ function App() {
         {screen === 'live' && micMode && (
           <>
             <span data-testid="active-scenario-name"><Chip tone="neutral">{sim.scenario.name}</Chip></span>
+            {!mic.listening && mic.lines.length === 0 && (
+              <select data-testid="practice-prompt" value={promptId} onChange={(e) => setPromptId(e.target.value)}
+                aria-label="Practice prompt"
+                style={{
+                  fontFamily: 'inherit', fontSize: 11.5, padding: '3px 6px',
+                  background: 'var(--bg-inset)', color: 'var(--ink-0)',
+                  border: '1px solid var(--line)', borderRadius: 5, cursor: 'pointer',
+                }}>
+                {MeetingData.PRACTICE_PROMPTS.map(p => (
+                  <option key={p.id} value={p.id}>{p.title}{p.targetSec ? ` · ${p.targetSec}s` : ''}</option>
+                ))}
+              </select>
+            )}
             <span data-testid="mic-status" data-status={mic.status} style={{ fontSize: 12, color: mic.status === 'denied' || mic.status === 'error' || mic.status === 'unsupported' ? 'var(--rose)' : 'var(--ink-2)' }}>
               {mic.status === 'unsupported' ? 'Live mic needs a browser with speech recognition (Chrome, Edge or Safari).'
                 : mic.status === 'denied' ? 'Microphone access was blocked — allow it in the address bar, then press Start.'
                 : mic.status === 'error' ? `Speech recognition stopped: ${mic.error}`
                 : mic.listening ? 'Listening — speak as you would in the meeting.'
-                : 'Press Start and speak. Your browser does the transcription (in Chrome, audio goes to Google); nothing is stored.'}
+                : mic.lines.length ? 'Stopped. Save keeps this session in this browser only.'
+                : 'Press Start and speak. Your browser transcribes (in Chrome, audio goes to Google); nothing is saved unless you press Save.'}
             </span>
             <div style={{ flex: 1 }}/>
             {mic.lines.length > 0 && !mic.listening && (
-              <button onClick={() => { mic.clear(); sim.setT(0); }} style={subBtn(false)}>Clear</button>
+              <>
+                <button data-testid="save-session" onClick={saveMicSession}
+                  disabled={savedLines === mic.lines} style={subBtn(savedLines === mic.lines)}>
+                  {savedLines === mic.lines && I('check', { size: 12 })}
+                  {savedLines === mic.lines ? 'Saved' : 'Save session'}
+                </button>
+                <button onClick={() => { mic.clear(); sim.setT(0); }} style={subBtn(false)}>Clear</button>
+              </>
             )}
             <button data-testid="mic-toggle" onClick={toggleRun} disabled={mic.status === 'unsupported'}
               style={subBtn(mic.listening)}>

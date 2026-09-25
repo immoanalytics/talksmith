@@ -42,12 +42,18 @@ rewrites, transcript); **Share review** copies it to the clipboard.
 
 Tweaks → Scenario → **Live mic (practice)**, then **Start mic**. Your own speech
 becomes the transcript (the browser's Web Speech API: Chrome, Edge, Safari —
-in Chrome the audio is sent to Google for recognition; nothing is stored).
+in Chrome the audio is sent to Google for recognition).
 Coaching cues come from what you actually said (`deriveCoaching`: filler
 words, hedging, long sentences, pace, open questions, clean delivery), and
 Review, scores and Export notes work on your session. Group-only readouts
 (talk balance, interruptions, room mood) are hidden since you're the only
 speaker. Needs HTTPS or localhost for microphone access.
+
+Pick a **practice prompt** (pitch, push back on a deadline, tough feedback,
+summarize a decision) for a brief and a time goal. Press **Save session** to
+keep a session — saved only in this browser (`localStorage`), never uploaded;
+Profile → **Mic sessions** lists them with clarity, filler rate and pace, and
+lets you delete them.
 
 ## Profile
 

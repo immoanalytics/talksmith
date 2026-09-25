@@ -550,3 +550,46 @@ test.describe('live mic practice', () => {
     await expect(page.locator('[data-testid="mic-status"]')).toContainText('Microphone access was blocked');
   });
 });
+
+test.describe('practice prompts and saved sessions', () => {
+  test('a prompt shows its brief and time goal, and a saved session lands in Profile', async ({ page }) => {
+    await installFakeSpeech(page);
+    await bootApp(page);
+    await page.locator('[data-testid="screen-tab-live"]').click();
+    await page.locator('[data-testid="settings-button"] button').click();
+    await page.locator('[data-testid="scenario-picker"]').selectOption('mic');
+    await page.keyboard.press('Escape');
+
+    await page.locator('[data-testid="practice-prompt"]').selectOption('pitch');
+    await expect(page.locator('[data-testid="practice-prompt-card"]')).toContainText('Pitch your top priority');
+    await expect(page.locator('[data-testid="time-goal"]')).toContainText('/ 60s');
+
+    await page.locator('[data-testid="mic-toggle"]').click();
+    await page.evaluate(() => window.__speech.say('We should put onboarding first because the funnel data is clear'));
+    await page.locator('[data-testid="mic-toggle"]').click();
+    await page.locator('[data-testid="save-session"]').click();
+    await expect(page.locator('[data-testid="save-session"]')).toHaveText(/Saved/);
+
+    await page.locator('[data-testid="screen-tab-profile"]').click();
+    const row = page.locator('[data-testid="practice-session"]');
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText('Pitch your top priority');
+
+    // Survives a reload (stored locally), and can be deleted.
+    await page.reload();
+    await page.locator('[data-testid="title-bar"]').waitFor();
+    await expect(row).toHaveCount(1);
+    await page.getByRole('button', { name: /Delete session/ }).click();
+    await expect(row).toHaveCount(0);
+    expect(await page.evaluate(() => window.MeetingData.loadSessions().length)).toBe(0);
+  });
+
+  test('nothing is saved unless you press Save', async ({ page }) => {
+    await installFakeSpeech(page);
+    await bootApp(page);
+    await startMicMode(page);
+    await page.evaluate(() => window.__speech.say('Just thinking out loud here'));
+    await page.locator('[data-testid="mic-toggle"]').click();
+    expect(await page.evaluate(() => window.MeetingData.loadSessions().length)).toBe(0);
+  });
+});

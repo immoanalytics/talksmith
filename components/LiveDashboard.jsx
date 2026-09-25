@@ -1,6 +1,6 @@
 // LiveDashboard.jsx — the main screen
 
-function Transcript({ transcript, participants, t, interim = '' }) {
+function Transcript({ transcript, participants, t, interim = '', prompt = null }) {
   const scrollRef = React.useRef();
   React.useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -67,11 +67,21 @@ function Transcript({ transcript, participants, t, interim = '' }) {
           {interim}<TypingCaret />
         </div>
       )}
-      {transcript.length === 0 && !interim && (
+      {transcript.length === 0 && !interim && (prompt ? (
+        <div data-testid="practice-prompt-card" style={{
+          margin: '12px 0', padding: 14, borderRadius: 8,
+          background: 'var(--bg-inset)', border: '1px solid var(--line-soft)',
+        }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>
+            {prompt.title}{prompt.targetSec ? ` · aim for ${prompt.targetSec}s` : ''}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--ink-1)', lineHeight: 1.5 }}>{prompt.text}</div>
+        </div>
+      ) : (
         <div style={{ padding: 20, textAlign: 'center', color: 'var(--ink-3)', fontSize: 12 }}>
           Waiting for audio…
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -344,7 +354,8 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
           </div>
         }
       >
-        <Transcript transcript={sim.transcript} participants={sim.participants} t={sim.t} interim={interim}/>
+        <Transcript transcript={sim.transcript} participants={sim.participants} t={sim.t} interim={interim}
+          prompt={sim.scenario.prompt || null}/>
       </Panel>
 
       {/* CENTER — Guidance, from the head coach */}
@@ -535,17 +546,26 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
             </div>
           </CoachBlock>
 
-          {/* Outcomes coach — meeting arc */}
+          {/* Outcomes coach — meeting arc. Solo practice tracks only the
+              prompt's time budget (and shows nothing for free practice). */}
+          {(!solo || sim.scenario.prompt?.targetSec) && (
           <CoachBlock name="Outcomes coach" scope="watching the arc">
             <div>
-              <div className="eyebrow" style={{ marginBottom: 8 }}>Meeting goals</div>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>{solo ? 'Practice goal' : 'Meeting goals'}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {!solo && <GoalRow label="Speak less than 50%" current={sim.metrics.yourTalkPct} target={50} invert/>}
-                <GoalRow label="Ask ≥ 3 questions" current={sim.metrics.questionCount} target={3}/>
-                {!solo && <GoalRow label="Acknowledge objections" current={sim.metrics.acknowledged} target={sim.metrics.objections}/>}
+                {solo ? (
+                  <TimeGoalRow elapsed={Math.floor(sim.t)} target={sim.scenario.prompt.targetSec}/>
+                ) : (
+                  <>
+                    <GoalRow label="Speak less than 50%" current={sim.metrics.yourTalkPct} target={50} invert/>
+                    <GoalRow label="Ask ≥ 3 questions" current={sim.metrics.questionCount} target={3}/>
+                    <GoalRow label="Acknowledge objections" current={sim.metrics.acknowledged} target={sim.metrics.objections}/>
+                  </>
+                )}
               </div>
             </div>
           </CoachBlock>
+          )}
 
           {/* Head coach — graceful degradation */}
           {sim.metrics.audioQuality < 0.6 && (
@@ -582,6 +602,22 @@ function GoalRow({ label, current, target, invert = false }) {
         </span>
       </div>
       <Meter value={ratio * 100} color={done ? 'var(--green)' : 'var(--blue)'} height={3}/>
+    </div>
+  );
+}
+
+// Practice time budget: fills toward the target, turns amber once you run over.
+function TimeGoalRow({ elapsed, target }) {
+  const over = elapsed > target;
+  return (
+    <div data-testid="time-goal">
+      <div style={{ display: 'flex', fontSize: 11.5, marginBottom: 3 }}>
+        <span style={{ flex: 1, color: 'var(--ink-1)' }}>Make your point within {target}s</span>
+        <span className="mono" style={{ color: over ? 'var(--amber)' : 'var(--ink-2)' }}>
+          {elapsed}s / {target}s
+        </span>
+      </div>
+      <Meter value={Math.min(100, (elapsed / target) * 100)} color={over ? 'var(--amber)' : 'var(--blue)'} height={3}/>
     </div>
   );
 }
