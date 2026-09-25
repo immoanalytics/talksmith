@@ -191,6 +191,19 @@ function App() {
   const toggleRunRef = React.useRef(toggleRun);
   toggleRunRef.current = toggleRun;
 
+  // One click from anywhere on Live: switch to the mic and start listening.
+  const startRecording = () => {
+    setScenarioId(MeetingData.MIC_SCENARIO_ID);
+    setIdle(false);
+    setScreen('live');
+    if (!mic.listening) mic.start();
+  };
+  const stopAndReview = () => {
+    mic.stop();
+    setReviewT(0);
+    setScreen('review');
+  };
+
   const [reviewT, setReviewT] = React.useState(42);
   const [reviewPlaying, setReviewPlaying] = React.useState(false);
   // The Review screen reads everything from the active scenario so it tracks
@@ -333,19 +346,31 @@ function App() {
                 <button onClick={() => { mic.clear(); sim.setT(0); }} style={subBtn(false)}>Clear</button>
               </>
             )}
+            {!mic.listening && mic.lines.length === 0 && (
+              <button data-testid="back-to-demo" onClick={() => setScenarioId('q2_roadmap')} style={subBtn(false)}>
+                Back to demo
+              </button>
+            )}
             <button data-testid="mic-toggle" onClick={toggleRun} disabled={mic.status === 'unsupported'}
               style={subBtn(mic.listening)}>
               {I('mic', { size: 12 })}{mic.listening ? 'Stop mic' : 'Start mic'}
             </button>
+            {mic.lines.length > 0 && (
+              <button data-testid="stop-and-review" onClick={stopAndReview} style={primaryBtn(false)}>
+                {mic.listening ? 'Stop & review' : 'Review'}
+              </button>
+            )}
           </>
         )}
         {screen === 'live' && !micMode && (
           <>
+            <Chip tone="neutral" size="sm">Demo</Chip>
             <span data-testid="active-scenario-name"><Chip tone="neutral">{sim.scenario.name}</Chip></span>
             <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{sim.scenario.summary}</span>
             <div style={{ flex: 1 }}/>
+            <RecordButton onClick={startRecording} unsupported={mic.status === 'unsupported'}/>
             <button onClick={() => setIdle(i => !i)} style={subBtn(idle)}>
-              {idle ? 'Start meeting' : 'Idle state'}
+              {idle ? 'Play demo' : 'Idle state'}
             </button>
             <button onClick={() => setMuted(m => !m)} style={subBtn(muted)}>
               {muted ? I('bellOff', { size: 12 }) : I('bell', { size: 12 })}
@@ -389,7 +414,8 @@ function App() {
       </div>
 
       {idle && screen === 'live' && !micMode ? (
-        <IdleState scenario={sim.scenario} onStart={() => setIdle(false)} onReview={() => setScreen('review')}/>
+        <IdleState scenario={sim.scenario} onStart={() => setIdle(false)} onReview={() => setScreen('review')}
+          onRecord={startRecording} unsupported={mic.status === 'unsupported'}/>
       ) : screen === 'live' ? (
         <LiveDashboard sim={sim} running={simRunning} onToggleRun={toggleRun}
           interim={micMode ? mic.interim : ''}
@@ -444,7 +470,31 @@ function subBtn(active) {
   };
 }
 
-function IdleState({ scenario, onStart, onReview }) {
+function primaryBtn(disabled) {
+  return {
+    border: '1px solid var(--ink-0)', background: 'var(--ink-0)', color: 'var(--bg-0)',
+    fontSize: 11.5, fontWeight: 500, padding: '4px 10px', borderRadius: 5,
+    cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+    display: 'inline-flex', alignItems: 'center', gap: 6,
+    opacity: disabled ? 0.45 : 1,
+  };
+}
+
+// Starts a real recording from your mic (the live mic mode). Disabled, with
+// the reason on hover, in browsers without speech recognition (e.g. Firefox).
+function RecordButton({ onClick, unsupported, large }) {
+  const style = primaryBtn(unsupported);
+  if (large) Object.assign(style, { fontSize: 12.5, padding: '8px 14px', borderRadius: 6 });
+  return (
+    <button data-testid="start-recording" onClick={onClick} disabled={unsupported} style={style}
+      title={unsupported ? 'Needs a browser with speech recognition (Chrome, Edge or Safari).' : 'Record from your microphone with live coaching'}>
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--rose)' }}/>
+      Record meeting
+    </button>
+  );
+}
+
+function IdleState({ scenario, onStart, onReview, onRecord, unsupported }) {
   return (
     <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 40, background: 'var(--bg-0)' }}>
       <div style={{ maxWidth: 420, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
@@ -466,10 +516,11 @@ function IdleState({ scenario, onStart, onReview }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <RecordButton onClick={onRecord} unsupported={unsupported} large/>
           <button onClick={onStart} style={{
-            border: '1px solid var(--ink-0)', background: 'var(--ink-0)', color: 'var(--bg-0)',
-            fontSize: 12.5, fontWeight: 500, padding: '8px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
-          }}>Start listening now</button>
+            border: '1px solid var(--line)', background: 'transparent', color: 'var(--ink-1)',
+            fontSize: 12.5, padding: '8px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+          }}>Play demo</button>
           <button onClick={onReview} style={{
             border: '1px solid var(--line)', background: 'transparent', color: 'var(--ink-1)',
             fontSize: 12.5, padding: '8px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
