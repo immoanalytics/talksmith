@@ -454,3 +454,99 @@ test.describe('profile controls', () => {
     await expect(dialog).toHaveCount(0);
   });
 });
+
+// A scriptable stand-in for the Web Speech API: tests "speak" by calling
+// window.__speech.say(text) (final result) or .hear(text) (interim).
+async function installFakeSpeech(page, { deny = false } = {}) {
+  await page.addInitScript(({ deny }) => {
+    class FakeRecognition {
+      start() {
+        if (deny) { setTimeout(() => this.onerror && this.onerror({ error: 'not-allowed' }), 0); return; }
+        window.__speech.active = this;
+      }
+      abort() { if (window.__speech.active === this) window.__speech.active = null; }
+      stop() { this.abort(); }
+    }
+    const emit = (text, isFinal) => {
+      const rec = window.__speech.active;
+      if (!rec) throw new Error('speech recognition is not listening');
+      const result = [{ transcript: text }];
+      result.isFinal = isFinal;
+      rec.onresult({ resultIndex: 0, results: [result] });
+    };
+    window.__speech = { active: null, say: (t) => emit(t, true), hear: (t) => emit(t, false) };
+    window.SpeechRecognition = FakeRecognition;
+  }, { deny });
+}
+
+async function startMicMode(page) {
+  await page.locator('[data-testid="screen-tab-live"]').click();
+  await page.locator('[data-testid="settings-button"] button').click();
+  await page.locator('[data-testid="scenario-picker"]').selectOption('mic');
+  await page.keyboard.press('Escape');
+  await page.locator('[data-testid="mic-toggle"]').click();
+  await expect(page.locator('[data-testid="mic-status"]')).toHaveAttribute('data-status', 'listening');
+}
+
+test.describe('live mic practice', () => {
+  test('coaching is derived from what was said', async ({ page }) => {
+    await bootApp(page);
+    const r = await page.evaluate(() => {
+      const md = window.MeetingData;
+      const filler = 'Um so basically I like want to um talk about the plan and like you know basically um what we do next and uh how we get there';
+      const clean = 'We ship the onboarding rework in May. Search gets a two week ranking spike. Marcus owns the plan and Priya owns the metrics review.';
+      const lines = (txt) => [0, 8, 16, 24].map(t => ({ t, s: 'you', txt }));
+      return {
+        filler: md.deriveCoaching(lines(filler)).nudges.map(n => n.id),
+        clean: md.deriveCoaching(lines(clean)).nudges.map(n => n.id),
+        question: md.deriveCoaching([{ t: 0, s: 'you', txt: 'What do you each think we should do next?' }]).nudges.map(n => n.id),
+      };
+    });
+    expect(r.filler).toContain('mic-fillers');
+    expect(r.clean).not.toContain('mic-fillers');
+    expect(r.clean).toContain('mic-clean');
+    expect(r.question).toContain('mic-question');
+  });
+
+  test('speech becomes the transcript and drives cues, review and export', async ({ page }) => {
+    await installFakeSpeech(page);
+    await bootApp(page);
+    await startMicMode(page);
+
+    await page.evaluate(() => window.__speech.hear('um so basically'));
+    await expect(page.locator('[data-testid="interim-transcript"]')).toContainText('um so basically');
+
+    const filler = 'um so basically I like want to um talk about the plan and like you know basically um what we do next';
+    for (let i = 0; i < 3; i++) await page.evaluate((t) => window.__speech.say(t), filler);
+    await expect(page.getByText('Um so basically I like want to').first()).toBeVisible();
+    await expect(page.locator('[data-testid="active-cue"][data-cue-id="mic-fillers"]')).toBeVisible();
+
+    // Group-only panels are hidden for a solo session.
+    await expect(page.getByText('Team dynamics coach')).toHaveCount(0);
+
+    await page.locator('[data-testid="mic-toggle"]').click();
+    await expect(page.locator('[data-testid="mic-status"]')).toHaveAttribute('data-status', 'idle');
+
+    await page.locator('[data-testid="screen-tab-review"]').click();
+    await expect(page.locator('[data-testid="score-bar"]')).toContainText('Live mic practice');
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.locator('[data-testid="export-notes"]').click(),
+    ]);
+    const text = require('fs').readFileSync(await download.path(), 'utf8');
+    expect(text).toContain('Filler words');
+    expect(text).toContain('Um so basically I like want to');
+  });
+
+  test('a blocked microphone is explained, not silent', async ({ page }) => {
+    await installFakeSpeech(page, { deny: true });
+    await bootApp(page);
+    await page.locator('[data-testid="screen-tab-live"]').click();
+    await page.locator('[data-testid="settings-button"] button').click();
+    await page.locator('[data-testid="scenario-picker"]').selectOption('mic');
+    await page.keyboard.press('Escape');
+    await page.locator('[data-testid="mic-toggle"]').click();
+    await expect(page.locator('[data-testid="mic-status"]')).toHaveAttribute('data-status', 'denied');
+    await expect(page.locator('[data-testid="mic-status"]')).toContainText('Microphone access was blocked');
+  });
+});

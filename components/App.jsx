@@ -50,6 +50,80 @@ function pickInitialTheme() {
   return TWEAKS.theme;
 }
 
+// Live mic transcription via the browser's Web Speech API (Chrome, Edge,
+// Safari). Final results become transcript lines stamped with the meeting
+// clock (`getT`); `interim` is the words still being recognized. Chrome ends
+// recognition after a silence, so we restart it while the user wants it on.
+function useSpeechTranscript(getT) {
+  const Recognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+  const [lines, setLines] = React.useState([]);
+  const [interim, setInterim] = React.useState('');
+  // idle | listening | denied | unsupported | error
+  const [status, setStatus] = React.useState(Recognition ? 'idle' : 'unsupported');
+  const [error, setError] = React.useState('');
+  const recRef = React.useRef(null);
+  const wantRef = React.useRef(false);
+  const getTRef = React.useRef(getT);
+  getTRef.current = getT;
+
+  const stop = React.useCallback(() => {
+    wantRef.current = false;
+    const rec = recRef.current;
+    recRef.current = null;
+    if (rec) { try { rec.abort(); } catch {} }
+    setInterim('');
+    setStatus(s => (s === 'listening' ? 'idle' : s));
+  }, []);
+
+  const start = React.useCallback(() => {
+    if (!Recognition || recRef.current) return;
+    wantRef.current = true;
+    const rec = new Recognition();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = navigator.language || 'en-US';
+    rec.onresult = (e) => {
+      let pending = '';
+      const finals = [];
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        const txt = (r[0] && r[0].transcript || '').trim();
+        if (!txt) continue;
+        if (r.isFinal) finals.push(txt); else pending += (pending ? ' ' : '') + txt;
+      }
+      if (finals.length) {
+        const t = Math.round(getTRef.current() * 10) / 10;
+        setLines(prev => [...prev, ...finals.map(txt => ({
+          t, s: 'you', txt: txt.charAt(0).toUpperCase() + txt.slice(1),
+        }))]);
+      }
+      setInterim(pending);
+    };
+    rec.onerror = (e) => {
+      if (e.error === 'no-speech' || e.error === 'aborted') return; // benign; onend restarts
+      wantRef.current = false;
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') setStatus('denied');
+      else { setStatus('error'); setError(e.error || 'unknown error'); }
+    };
+    rec.onend = () => {
+      if (recRef.current !== rec) return;           // stopped or replaced
+      if (wantRef.current) { try { rec.start(); return; } catch {} }
+      recRef.current = null;
+      setInterim('');
+      setStatus(s => (s === 'listening' ? 'idle' : s));
+    };
+    recRef.current = rec;
+    setError('');
+    try { rec.start(); setStatus('listening'); }
+    catch (err) { recRef.current = null; wantRef.current = false; setStatus('error'); setError(String(err && err.message || err)); }
+  }, [Recognition]);
+
+  const clear = React.useCallback(() => { setLines([]); setInterim(''); }, []);
+  React.useEffect(() => stop, [stop]); // release the mic on unmount
+
+  return { lines, interim, status, error, start, stop, clear, listening: status === 'listening' };
+}
+
 function App() {
   const [theme, setTheme] = React.useState(pickInitialTheme);
   const [nudgeStyle, setNudgeStyle] = React.useState(() => loadPref('talksmith.nudgeStyle', TWEAKS.nudgeStyle, NUDGE_STYLES));
@@ -69,8 +143,9 @@ function App() {
   const closeExplain = React.useCallback(() => setExplainOpen(false), []);
   const [scenarioId, setScenarioId] = React.useState(() => {
     const v = loadPref('talksmith.scenario', 'q2_roadmap');
-    return MeetingData.SCENARIOS[v] ? v : 'q2_roadmap';
+    return MeetingData.SCENARIOS[v] || v === MeetingData.MIC_SCENARIO_ID ? v : 'q2_roadmap';
   });
+  const micMode = scenarioId === MeetingData.MIC_SCENARIO_ID;
 
   React.useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
   React.useEffect(() => { try { localStorage.setItem('talksmith.theme', theme); } catch {} }, [theme]);
@@ -85,10 +160,27 @@ function App() {
   // Profile/Review don't read sim state; ticking it is wasted work and the
   // timecode is misleading anyway when you're not "in" the meeting.
   const screenWantsSim = screen === 'live' || screen === 'overlay';
+  // Live mic: the clock runs exactly while the mic is listening, in real time,
+  // so line timestamps match when you spoke.
+  const tRef = React.useRef(0);
+  const mic = useSpeechTranscript(() => tRef.current);
+  const micScenario = React.useMemo(
+    () => (micMode ? MeetingData.micScenario(mic.lines) : null),
+    [micMode, mic.lines]
+  );
   const sim = MeetingData.useMeetingSim({
-    running: running && !idle && screenWantsSim,
-    speed, activeGoal, scenarioId,
+    running: micMode ? mic.listening : running && !idle && screenWantsSim,
+    speed: micMode ? 1 : speed, activeGoal, scenarioId, scenario: micScenario,
   });
+  tRef.current = sim.t;
+  // Leaving mic mode releases the microphone.
+  React.useEffect(() => { if (!micMode) mic.stop(); }, [micMode, mic.stop]);
+  const toggleRun = () => {
+    if (!micMode) return setRunning(r => !r);
+    if (mic.listening) mic.stop(); else mic.start();
+  };
+  const toggleRunRef = React.useRef(toggleRun);
+  toggleRunRef.current = toggleRun;
 
   const [reviewT, setReviewT] = React.useState(42);
   const [reviewPlaying, setReviewPlaying] = React.useState(false);
@@ -132,7 +224,7 @@ function App() {
         return;
       } else if (e.key === ' ') {
         if (isActivatableTarget(e.target)) return;
-        if (cur === 'live' || cur === 'overlay') setRunning(r => !r);
+        if (cur === 'live' || cur === 'overlay') toggleRunRef.current();
         if (cur === 'review') setReviewPlaying(p => !p);
         e.preventDefault();
       } else if (e.key === 'Escape') {
@@ -177,8 +269,9 @@ function App() {
   };
 
   const meetingState = screen === 'live' || screen === 'overlay'
-    ? { recording: running && !idle, timecode: sim.tc }
+    ? { recording: micMode ? mic.listening : running && !idle, timecode: sim.tc }
     : null;
+  const simRunning = micMode ? mic.listening : running;
 
   return (
     <div style={appStyles.chrome} data-screen-label={`Talksmith — ${screen}`}>
@@ -196,7 +289,27 @@ function App() {
         display: 'flex', alignItems: 'center', gap: 10, padding: '0 14px',
         background: 'var(--bg-0)',
       }}>
-        {screen === 'live' && (
+        {screen === 'live' && micMode && (
+          <>
+            <span data-testid="active-scenario-name"><Chip tone="neutral">{sim.scenario.name}</Chip></span>
+            <span data-testid="mic-status" data-status={mic.status} style={{ fontSize: 12, color: mic.status === 'denied' || mic.status === 'error' || mic.status === 'unsupported' ? 'var(--rose)' : 'var(--ink-2)' }}>
+              {mic.status === 'unsupported' ? 'Live mic needs a browser with speech recognition (Chrome, Edge or Safari).'
+                : mic.status === 'denied' ? 'Microphone access was blocked — allow it in the address bar, then press Start.'
+                : mic.status === 'error' ? `Speech recognition stopped: ${mic.error}`
+                : mic.listening ? 'Listening — speak as you would in the meeting.'
+                : 'Press Start and speak. Your browser does the transcription (in Chrome, audio goes to Google); nothing is stored.'}
+            </span>
+            <div style={{ flex: 1 }}/>
+            {mic.lines.length > 0 && !mic.listening && (
+              <button onClick={() => { mic.clear(); sim.setT(0); }} style={subBtn(false)}>Clear</button>
+            )}
+            <button data-testid="mic-toggle" onClick={toggleRun} disabled={mic.status === 'unsupported'}
+              style={subBtn(mic.listening)}>
+              {I('mic', { size: 12 })}{mic.listening ? 'Stop mic' : 'Start mic'}
+            </button>
+          </>
+        )}
+        {screen === 'live' && !micMode && (
           <>
             <span data-testid="active-scenario-name"><Chip tone="neutral">{sim.scenario.name}</Chip></span>
             <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{sim.scenario.summary}</span>
@@ -245,14 +358,15 @@ function App() {
         )}
       </div>
 
-      {idle && screen === 'live' ? (
+      {idle && screen === 'live' && !micMode ? (
         <IdleState scenario={sim.scenario} onStart={() => setIdle(false)} onReview={() => setScreen('review')}/>
       ) : screen === 'live' ? (
-        <LiveDashboard sim={sim} running={running} onToggleRun={() => setRunning(r => !r)}
+        <LiveDashboard sim={sim} running={simRunning} onToggleRun={toggleRun}
+          interim={micMode ? mic.interim : ''}
           muted={muted} onToggleMute={() => setMuted(m => !m)}
           variant={nudgeStyle} speed={speed} onSpeed={setSpeed}/>
       ) : screen === 'overlay' ? (
-        <CompactOverlay sim={sim} running={running} onExpand={() => setScreen('live')}
+        <CompactOverlay sim={sim} running={simRunning} onExpand={() => setScreen('live')}
           muted={muted} onToggleMute={() => setMuted(m => !m)}/>
       ) : screen === 'review' ? (
         <Review sim={reviewSim} t={reviewT} setT={setReviewT}
@@ -270,7 +384,7 @@ function App() {
         fontSize: 10.5, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)',
       }}>
         <span>Talksmith v0.4.2</span><span>·</span>
-        <span>On-device audio · cloud analysis</span>
+        <span>{micMode ? 'Browser speech recognition · analysis in this page' : 'On-device audio · cloud analysis'}</span>
         <div style={{ flex: 1 }}/>
         <span>⌘, settings</span><span>·</span>
         <span>⌘M mute coaching</span>
@@ -402,12 +516,11 @@ function TweaksPanel({ theme, setTheme, nudgeStyle, setNudgeStyle, scenarioId, s
               {Object.values(scenarios).map(s => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
+              <option value={MeetingData.MIC_SCENARIO_ID}>Live mic (practice)</option>
             </select>
-            {activeScenario && (
-              <div style={{ fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.4 }}>
-                {activeScenario.summary}
-              </div>
-            )}
+            <div style={{ fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.4 }}>
+              {activeScenario ? activeScenario.summary : 'Coach yourself on your own speech, live.'}
+            </div>
           </div>
         )}
         <div>

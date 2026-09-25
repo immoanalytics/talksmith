@@ -6,7 +6,20 @@ build step.
 
 ## Run it
 
-Open `Talksmith.html` (or `index.html`) in a browser. That's it.
+Open `Talksmith.html` (or `index.html`) in a browser. That's it — this dev
+page loads React and Babel from a CDN and compiles the JSX in the browser, so
+edits need no build step.
+
+For the fast, deployable version:
+
+```sh
+npm install
+npm run build   # → dist/: precompiled + minified JSX, React vendored locally
+npm start       # serves dist/ on $PORT (default 4321)
+```
+
+The build drops the ~3 MB Babel download and in-browser compile and has no
+runtime CDN dependency. It is deployed on Railway with `railway.json`.
 
 If React/Babel can't be fetched (offline, CDN blocked) the loading screen says
 so instead of spinning forever.
@@ -25,6 +38,25 @@ so instead of spinning forever.
 Review → **Export notes** downloads a Markdown summary (scores, key moments,
 rewrites, transcript); **Share review** copies it to the clipboard.
 
+## Live mic practice
+
+Tweaks → Scenario → **Live mic (practice)**, then **Start mic**. Your own speech
+becomes the transcript (the browser's Web Speech API: Chrome, Edge, Safari —
+in Chrome the audio is sent to Google for recognition; nothing is stored).
+Coaching cues come from what you actually said (`deriveCoaching`: filler
+words, hedging, long sentences, pace, open questions, clean delivery), and
+Review, scores and Export notes work on your session. Group-only readouts
+(talk balance, interruptions, room mood) are hidden since you're the only
+speaker. Needs HTTPS or localhost for microphone access.
+
+## Profile
+
+Each meeting has a date (`daysAgo`); the 7d / 30d / 90d / All buttons filter
+everything on the screen through `profileModel({ rangeDays })`, and the trend
+charts plot one point per real meeting. **Edit targets** sets per-goal
+targets (saved locally). **Explain model** shows the scoring rules, the
+engine's composite weights and each meeting's scores.
+
 ## Scenarios
 
 The simulated meeting can be swapped from the **Tweaks** panel (gear icon in
@@ -35,7 +67,7 @@ the top right → Scenario). Three are bundled:
 - **Eng standup decision** — crisp decision; coach is mostly silent.
 
 Add more in `Talksmith.html` under the `SCENARIOS` block. Each entry needs
-`participants`, `script`, `nudges`, `timeline`, and `duration`.
+`participants`, `script`, `nudges`, `timeline`, `duration` and `daysAgo`.
 
 ## How results are scored
 
@@ -93,7 +125,8 @@ already-installed Chromium instead of downloading one:
 PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chrome npm test
 ```
 
-The same suite runs in CI on every PR via `.github/workflows/ci.yml`.
+`npm run test:dist` builds and runs the same suite against `dist/`. Both run
+in CI on every PR via `.github/workflows/ci.yml`.
 
 When adding tests, target `[data-testid]` selectors over copy/style — the
 existing seams are documented in `tests/smoke.spec.js`.
@@ -104,7 +137,8 @@ existing seams are documented in `tests/smoke.spec.js`.
 - `components/` — JSX reference copies, auto-extracted from `Talksmith.html`
   (kept in sync by `scripts/extract-components.cjs`).
 - `styles.css` — generated copy of the inline stylesheet.
-- `scripts/serve.cjs` — static server used by the tests.
+- `scripts/build.cjs` — production build into `dist/`.
+- `scripts/serve.cjs` — static server (tests; `npm start` serves `dist/`).
 - `scripts/extract-components.cjs` — keeps `components/` faithful.
 - `tests/` — Playwright smoke + scoring tests.
 - `playwright.config.js` — test config.
