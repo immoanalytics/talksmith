@@ -4,7 +4,7 @@
     "buildCommand": "npm run build"
   },
   "deploy": {
-    "startCommand": "npm start",
+    "startCommand": "node scripts/serve.cjs dist",
     "healthcheckPath": "/",
     "restartPolicyType": "ON_FAILURE"
   }
