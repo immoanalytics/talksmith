@@ -11,6 +11,9 @@
     "components:check": "node scripts/extract-components.cjs --check"
   },
   "devDependencies": {
-    "@playwright/test": "^1.48.2"
+    "@babel/standalone": "7.29.0",
+    "@playwright/test": "^1.48.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   }
 }

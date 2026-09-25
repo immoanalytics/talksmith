@@ -151,6 +151,8 @@ const SCENARIOS = {
     duration: 175,
     startAt: 48,
     pplCount: 4,
+    // Simulated low-audio window [start, end) — demos the degraded state.
+    audioDips: [[66, 72]],
     participants: PARTICIPANTS,
     script: SCRIPT,
     nudges: NUDGE_SCRIPT,
@@ -406,8 +408,8 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
   );
 
   const metrics = React.useMemo(
-    () => deriveMetrics(transcript, t, analysis, PARTICIPANTS),
-    [transcript, t, analysis, PARTICIPANTS]
+    () => deriveMetrics(transcript, t, analysis, PARTICIPANTS, scenario),
+    [transcript, t, analysis, PARTICIPANTS, scenario]
   );
 
   // Default snooze: 2 minutes of meeting time, matching the head-coach
@@ -434,7 +436,56 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
   };
 }
 
-function deriveMetrics(transcript, t, analysis, participants = PARTICIPANTS) {
+// How each kind of timeline event moves the room. Negative swings (tension
+// up, sentiment/alignment down) fade over MOOD_DECAY_SECS; positive ones ramp
+// in and persist, so a meeting that recovers stays recovered. Unknown event
+// types fall back to their tone.
+const EVENT_MOOD = {
+  interrupt: { tension: 0.55, sentiment: -0.18, lsm: -0.22 },
+  tone:      { tension: 0.38, sentiment: -0.22, lsm: -0.15 },
+  objection: { tension: 0.15, sentiment: -0.10, lsm: -0.08 },
+  dominance: { tension: 0.05, sentiment: -0.10, lsm: -0.04 },
+  pause:     { tension: 0.10, sentiment: -0.06, lsm: -0.03 },
+  commit:    { tension: 0.05, sentiment: -0.04, lsm: 0 },
+  opening:   { tension: -0.08, sentiment: 0.10, lsm: 0.06 },
+  converge:  { tension: -0.10, sentiment: 0.20, lsm: 0.12 },
+  recovery:  { tension: -0.05, sentiment: 0.10, lsm: 0.05 },
+  decide:    { tension: -0.08, sentiment: 0.15, lsm: 0.08 },
+  align:     { tension: -0.05, sentiment: 0.10, lsm: 0.06 },
+};
+const TONE_MOOD = {
+  rose:  EVENT_MOOD.interrupt,
+  amber: EVENT_MOOD.objection,
+  green: EVENT_MOOD.recovery,
+  blue:  { tension: 0, sentiment: 0, lsm: 0 },
+};
+const MOOD_DECAY_SECS = 30;
+
+// Room mood at time t, derived from the scenario's own timeline so every
+// scenario gets curves that match its content (not the Q2 script's).
+function moodAt(t, timeline = []) {
+  const mood = { tension: 0.22, sentiment: 0.5, lsm: 0.72 };
+  for (const e of timeline) {
+    if (e.t > t) continue;
+    const fx = EVENT_MOOD[e.type] || TONE_MOOD[e.tone] || TONE_MOOD.blue;
+    const age = t - e.t;
+    for (const k of Object.keys(mood)) {
+      const d = fx[k] || 0;
+      // "Bad" = raises tension or lowers sentiment/alignment.
+      const bad = k === 'tension' ? d > 0 : d < 0;
+      const w = bad ? Math.max(0, 1 - age / MOOD_DECAY_SECS) : Math.min(1, age / 5);
+      mood[k] += d * w;
+    }
+  }
+  return {
+    tension: clamp(mood.tension, 0, 1),
+    sentiment: clamp(mood.sentiment, 0, 1),
+    lsm: clamp(mood.lsm, 0.42, 0.92),
+  };
+}
+
+function deriveMetrics(transcript, t, analysis, participants = PARTICIPANTS, scenario = null) {
+  const timeline = (scenario && scenario.timeline) || [];
   // Talk time per participant. Estimate seconds from a speaking-rate constant
   // (words / wpm) rather than a flat per-word factor, which tracks real
   // delivery better and keeps the live bar consistent with the score engine.
@@ -457,14 +508,9 @@ function deriveMetrics(transcript, t, analysis, participants = PARTICIPANTS) {
   let othersInterruptedYou = transcript.filter(l => l.interrupted && l.s === 'you').length;
   const interruptions = youInterruptedOthers + othersInterruptedYou;
 
-  // Sentiment curve (synthetic but meeting-shaped)
-  const sentiment = Math.max(0, Math.min(1,
-    0.5
-    + (t > 18 && t < 44 ? -0.1 : 0)
-    + (t > 42 && t < 74 ? -0.18 : 0)
-    + (t > 72 && t < 100 ? -0.22 : 0)
-    + (t > 130 ? 0.2 : 0)
-  ));
+  // Room mood (sentiment, alignment, acoustic tension) from this scenario's
+  // flagged moments.
+  const { sentiment, lsm, tension } = moodAt(t, timeline);
 
   // Engagement
   const recent = transcript.filter(l => l.t > t - 45);
@@ -474,7 +520,7 @@ function deriveMetrics(transcript, t, analysis, participants = PARTICIPANTS) {
 
   // Silence — gap since last line + contextual classification
   const last = transcript[transcript.length - 1];
-  const silenceGap = last ? Math.max(0, t - last.t - last.txt.split(/\s+/).length * 0.35) : 0;
+  const silenceGap = last ? Math.max(0, t - last.t - (wordCount(last.txt) / SPEAK_WPM) * 60) : 0;
   // Context: if last line was a question, silence is "thinking" — healthy up to 6s
   const lastWasQuestion = last?.txt?.includes('?');
   const silenceContext = silenceGap < 1.5 ? 'flow'
@@ -502,28 +548,10 @@ function deriveMetrics(transcript, t, analysis, participants = PARTICIPANTS) {
   const intrDelta = (analysis ? analysis.youInterruptedOthers + analysis.othersInterruptedYou : 0);
   const psychSafety = intrDelta === 0 ? 'healthy' : intrDelta === 1 ? 'watch' : 'at risk';
 
-  // LSM (Linguistic Style Matching) — function-word overlap between You and others
-  // Simulated smooth curve: high at start (monologue inflates), drops at 42 interrupt,
-  // recovers at 102+ when you concede.
-  const lsmBase = 0.72;
-  const lsm = Math.max(0.42, Math.min(0.92,
-    lsmBase
-    + (t > 42 && t < 74 ? -0.22 : 0)
-    + (t > 72 && t < 102 ? -0.15 : 0)
-    + (t > 102 ? 0.12 : 0)
-    + (t > 138 ? 0.05 : 0)
-  ));
-
-  // Audio quality — simulated dip around t=66–72 to demo low-confidence state
-  const audioQuality = (t > 66 && t < 72) ? 0.38 : 0.94;
-
-  // Acoustic tension (jitter/shimmer proxy) — spikes during interrupt + tense stretch
-  const tension = Math.max(0, Math.min(1,
-    0.22
-    + (t > 42 && t < 50 ? 0.55 : 0)
-    + (t > 72 && t < 92 ? 0.38 : 0)
-    + (t > 130 ? -0.1 : 0)
-  ));
+  // Audio quality — scenarios can declare simulated low-audio windows to demo
+  // the head coach's low-confidence state.
+  const dips = (scenario && scenario.audioDips) || [];
+  const audioQuality = dips.some(([a, b]) => t >= a && t < b) ? 0.38 : 0.94;
 
   return {
     talkRatio, interruptions, sentiment, engagement, silenceGap, silenceContext,
@@ -535,6 +563,8 @@ function deriveMetrics(transcript, t, analysis, participants = PARTICIPANTS) {
     fillerCount, fillerRate, hedgeCount,
     openQuestions, questionCount,
     longestMonologueSec, psychSafety,
+    objections: analysis ? analysis.objections : 0,
+    acknowledged: analysis ? analysis.acknowledged : 0,
     yourTalkPct: talkRatio.find(p => p.id === 'you')?.pct ?? 0,
   };
 }
@@ -804,9 +834,39 @@ function profileModel() {
   };
 }
 
+// Post-meeting notes as Markdown — backs Review's "Export notes" and
+// "Share review". Pure, so it's testable and consistent with the ScoreBar.
+function buildReviewNotes(scenario) {
+  const r = scoreScenario(scenario);
+  const who = (id) => (scenario.participants.find(p => p.id === id) || { name: id }).name;
+  const lines = [
+    `# ${scenario.name} — meeting review`,
+    '',
+    `${fmtTime(scenario.duration)} · ${scenario.participants.length} participants · grade **${r.grade}** (${r.overall}/100)`,
+    '',
+    '## Scores',
+    `- Talk ratio: ${r.talkRatio}% (target <50) — ${r.signals.talkRatio.join('; ')}`,
+    `- Clarity: ${r.clarity}/100 — ${r.signals.clarity.join('; ')}`,
+    `- Influence: ${r.influence}/100 — ${r.signals.influence.join('; ')}`,
+    `- Listening: ${r.listening}/100 — ${r.signals.listening.join('; ')}`,
+    '',
+    '## Key moments',
+    ...scenario.timeline.map(e => `- ${fmtTime(e.t)} — ${e.label}`),
+  ];
+  const rewrites = scenario.nudges.filter(n => n.action && n.action.phrase);
+  if (rewrites.length) {
+    lines.push('', '## What you could have said');
+    for (const n of rewrites) lines.push(`- ${fmtTime(n.t)} · ${n.title}: ${n.action.phrase}`);
+  }
+  lines.push('', '## Transcript');
+  for (const l of scenario.script) lines.push(`- [${fmtTime(l.t)}] **${who(l.s)}:** ${l.txt}`);
+  return lines.join('\n') + '\n';
+}
+
 window.MeetingData = {
   PARTICIPANTS, SCRIPT, NUDGE_SCRIPT, TIMELINE_EVENTS,
   COACHES, GOAL_COACH_WEIGHTS, SCENARIOS,
-  fmtTime, useMeetingSim, deriveMetrics,
+  fmtTime, useMeetingSim, deriveMetrics, moodAt,
   analyzeTranscript, scoreFromAnalysis, scoreScenario, nudgeImpact, profileModel,
+  buildReviewNotes,
 };

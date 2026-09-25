@@ -67,7 +67,7 @@ function CompactOverlay({ sim, running, onExpand, muted, onToggleMute }) {
         </div>
 
         {/* Top nudge region */}
-        <div style={{ padding: 12 }}>
+        <div data-testid="overlay-top-cue" data-cue-id={top ? top.id : ''} style={{ padding: 12 }}>
           {top ? (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -141,7 +141,7 @@ function CompactOverlay({ sim, running, onExpand, muted, onToggleMute }) {
           background: 'oklch(0.14 0.005 260 / 0.5)',
         }}>
           <span style={{ fontSize: 10, color: 'var(--ink-3)', display: 'flex', gap: 4, alignItems: 'center' }}>
-            <Kbd>␣</Kbd> dismiss
+            <Kbd>X</Kbd> dismiss
           </span>
           <span style={{ fontSize: 10, color: 'var(--ink-3)', display: 'flex', gap: 4, alignItems: 'center' }}>
             <Kbd>S</Kbd> snooze

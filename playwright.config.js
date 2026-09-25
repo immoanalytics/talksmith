@@ -27,6 +27,11 @@ module.exports = defineConfig({
     baseURL: `http://localhost:${PORT}`,
     headless: true,
     viewport: { width: 1280, height: 800 },
+    // Point at a preinstalled Chromium when the bundled one isn't downloaded
+    // (e.g. sandboxes): PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chrome npm test
+    launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
+      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE }
+      : {},
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },

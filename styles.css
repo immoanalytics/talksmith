@@ -139,3 +139,66 @@ button { font-family: inherit; color: inherit; }
   0% { background-position: -200px 0; }
   100% { background-position: 200px 0; }
 }
+
+/* Honor OS-level motion preference. The pulse/edge/breathe loops carry
+   information (active state, high alert) but the motion itself isn't
+   essential — flatten to a still state for users who opt out. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Keyboard focus ring. Many of our buttons are icon-only and rely on inline
+   styles, so a single focus-visible rule covers them all without per-button
+   work. Inset to read on both --bg-1 panels and --bg-inset rails. */
+:focus { outline: none; }
+button:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Containment: each scrolling panel is its own layout/paint root. A new
+   transcript line or a dynamics tick can't invalidate layout in the rest
+   of the app. Cheap to add, real win when a meeting is active. */
+.scroll { contain: layout style paint; }
+
+/* Boot skeleton — visible before React mounts so the first paint isn't a
+   white flash. React's createRoot replaces #root's children, removing this. */
+.ts-boot {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 14px;
+  background: var(--bg-0); color: var(--ink-1);
+  font-family: var(--font-sans);
+}
+.ts-boot__mark {
+  font-size: 15px; font-weight: 600; letter-spacing: -0.01em;
+  color: var(--ink-0);
+}
+.ts-boot__bar {
+  width: 120px; height: 2px;
+  background: var(--line); border-radius: 2px; overflow: hidden;
+  position: relative;
+}
+.ts-boot__bar::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, var(--blue), transparent);
+  animation: tsBootSlide 1.4s ease-in-out infinite;
+}
+.ts-boot__hint { font-size: 11px; color: var(--ink-3); font-family: var(--font-mono); }
+.ts-boot--failed .ts-boot__bar { display: none; }
+.ts-boot--failed .ts-boot__hint {
+  color: var(--rose); max-width: 420px; text-align: center; line-height: 1.5;
+}
+@keyframes tsBootSlide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%);  }
+}

@@ -8,6 +8,23 @@ build step.
 
 Open `Talksmith.html` (or `index.html`) in a browser. That's it.
 
+If React/Babel can't be fetched (offline, CDN blocked) the loading screen says
+so instead of spinning forever.
+
+## Keyboard
+
+| Keys | Action |
+| --- | --- |
+| ⌘/Ctrl 1–4 | Live · Compact · Review · Profile |
+| Space | Pause/resume the meeting (Review: play/pause) |
+| ⌘/Ctrl M | Mute coaching |
+| ⌘/Ctrl , · Esc | Toggle / close settings |
+| ⌘/Ctrl E | Compact → expand to Live |
+| S · X | Compact: snooze · dismiss the top cue |
+
+Review → **Export notes** downloads a Markdown summary (scores, key moments,
+rewrites, transcript); **Share review** copies it to the clipboard.
+
 ## Scenarios
 
 The simulated meeting can be swapped from the **Tweaks** panel (gear icon in
@@ -35,21 +52,25 @@ change per scenario. The engine lives in the `MeetingData` section of
   letter grade. Every score carries the concrete `signals` that produced it,
   so the Review screen can explain each number.
 - The same `analyzeTranscript` backs the **live** dynamics readouts (filler
-  count, hedging, questions, longest run, psychological-safety), so live and
-  post-meeting views stay consistent.
+  count, hedging, questions, longest run, psychological-safety, objections
+  acknowledged), so live and post-meeting views stay consistent.
+- Live room mood (tension, sentiment, alignment) comes from `moodAt(t,
+  timeline)`, driven by each scenario's own flagged moments (`EVENT_MOOD`), so
+  a calm standup never shows the Q2 meeting's tension spikes. Scenarios can
+  declare `audioDips: [[start, end]]` to demo the low-audio state.
 
 The head coach prioritizes cues by projected **impact over frequency**
 (`nudgeImpact`) and surfaces at most one cue per specialist coach at a time,
 capped at two simultaneously.
 
-## Components stay in sync
+## Derived files stay in sync
 
-`Talksmith.html` is the source of truth; `components/*.jsx` are extracted
-copies kept faithful by a script:
+`Talksmith.html` is the source of truth. `components/*.jsx`, `index.html` and
+`styles.css` are generated from it — edit `Talksmith.html`, then:
 
 ```sh
-npm run components:sync    # rewrite components/ from Talksmith.html
-npm run components:check   # fail if they've drifted (runs in CI)
+npm run components:sync    # regenerate components/, index.html, styles.css
+npm run components:check   # fail if any have drifted (runs in CI)
 ```
 
 ## Tests
@@ -64,6 +85,14 @@ npm run test:install   # one-time: download Chromium
 npm test
 ```
 
+The suite is hermetic: the CDN scripts are served from `node_modules` (same
+pinned versions as the `<script>` tags), so it needs no internet. To use an
+already-installed Chromium instead of downloading one:
+
+```sh
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chrome npm test
+```
+
 The same suite runs in CI on every PR via `.github/workflows/ci.yml`.
 
 When adding tests, target `[data-testid]` selectors over copy/style — the
@@ -74,7 +103,7 @@ existing seams are documented in `tests/smoke.spec.js`.
 - `Talksmith.html` / `index.html` — the runnable prototype (source of truth).
 - `components/` — JSX reference copies, auto-extracted from `Talksmith.html`
   (kept in sync by `scripts/extract-components.cjs`).
-- `styles.css` — extracted version of the inline stylesheet.
+- `styles.css` — generated copy of the inline stylesheet.
 - `scripts/serve.cjs` — static server used by the tests.
 - `scripts/extract-components.cjs` — keeps `components/` faithful.
 - `tests/` — Playwright smoke + scoring tests.

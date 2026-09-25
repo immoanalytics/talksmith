@@ -2,6 +2,8 @@
 // components/*.jsx so the reference copies never drift from the canonical
 // source. The inline script is the source of truth; this just splits it on
 // the `// === components/NAME.jsx ===` markers and writes each block out.
+// It also keeps the other derived files faithful: index.html (a byte-for-byte
+// copy, so the app serves at /) and styles.css (the inline stylesheet).
 //
 // Usage:
 //   node scripts/extract-components.cjs          # write components/
@@ -40,6 +42,31 @@ if (sections.length === 0) {
 const check = process.argv.includes('--check');
 let drift = 0;
 
+const styleMatch = html.match(/<style>\n?([\s\S]*?)<\/style>/);
+if (!styleMatch) {
+  console.error('Could not find the inline <style> block.');
+  process.exit(1);
+}
+
+// Derived whole files: [path relative to ROOT, expected content].
+const derived = [
+  ['index.html', html],
+  ['styles.css', styleMatch[1].replace(/\s+$/, '') + '\n'],
+];
+for (const [rel, content] of derived) {
+  const file = path.join(ROOT, rel);
+  if (check) {
+    const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+    if (current !== content) {
+      console.error(`drift: ${rel} is out of sync with Talksmith.html`);
+      drift++;
+    }
+  } else {
+    fs.writeFileSync(file, content);
+    console.log(`wrote ${rel}`);
+  }
+}
+
 for (const s of sections) {
   const content = body.slice(s.start, s.end).replace(/^\n+/, '').replace(/\s+$/, '') + '\n';
   const file = path.join(OUT, s.name);
@@ -57,7 +84,7 @@ for (const s of sections) {
 }
 
 if (check && drift) {
-  console.error(`\n${drift} component file(s) out of sync. Run: node scripts/extract-components.cjs`);
+  console.error(`\n${drift} file(s) out of sync. Run: npm run components:sync`);
   process.exit(1);
 }
-console.log(check ? 'components/ in sync ✓' : `extracted ${sections.length} components`);
+console.log(check ? 'components/, index.html, styles.css in sync ✓' : `extracted ${sections.length} components`);

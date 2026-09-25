@@ -221,6 +221,9 @@ function TrendChart({ title, subtitle, current, delta, tone = 'blue', data, targ
   const y = v => padT + chartH - ((v - minY) / (maxY - minY)) * chartH;
   const x = i => padL + (i / (data.length - 1)) * chartW;
 
+  // Gradient ids feed url(#id), which can't contain spaces — a raw title
+  // there made the fill invalid and the area rendered solid black.
+  const gradId = `g-${tone}-${title.replace(/[^\w-]+/g, '-')}`;
   const pts = data.map((v, i) => `${x(i)},${y(v)}`).join(' ');
   const areaPts = `${padL},${padT + chartH} ${pts} ${padL + chartW},${padT + chartH}`;
 
@@ -247,7 +250,7 @@ function TrendChart({ title, subtitle, current, delta, tone = 'blue', data, targ
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 120, display: 'block' }}>
         <defs>
-          <linearGradient id={`g-${tone}-${title}`} x1="0" x2="0" y1="0" y2="1">
+          <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor={`var(--${tone})`} stopOpacity="0.25"/>
             <stop offset="100%" stopColor={`var(--${tone})`} stopOpacity="0"/>
           </linearGradient>
@@ -276,7 +279,7 @@ function TrendChart({ title, subtitle, current, delta, tone = 'blue', data, targ
           </g>
         )}
         {/* area */}
-        <polygon points={areaPts} fill={`url(#g-${tone}-${title})`}/>
+        <polygon points={areaPts} fill={`url(#${gradId})`}/>
         {/* line */}
         <polyline points={pts} fill="none" stroke={`var(--${tone})`} strokeWidth="1.75"
                   strokeLinecap="round" strokeLinejoin="round"/>
