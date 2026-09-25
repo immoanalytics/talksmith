@@ -593,3 +593,35 @@ test.describe('practice prompts and saved sessions', () => {
     expect(await page.evaluate(() => window.MeetingData.loadSessions().length)).toBe(0);
   });
 });
+
+test.describe('record meeting', () => {
+  test('Record meeting starts the mic in one click; Stop & review opens the review', async ({ page }) => {
+    await installFakeSpeech(page);
+    await bootApp(page);
+    await page.locator('[data-testid="screen-tab-live"]').click();
+    await page.locator('[data-testid="start-recording"]').click();
+    await expect(page.locator('[data-testid="mic-status"]')).toHaveAttribute('data-status', 'listening');
+
+    await page.evaluate(() => window.__speech.say('What do you each think about the timeline'));
+    await page.locator('[data-testid="stop-and-review"]').click();
+    await expect(page.locator('[data-testid="screen-tab-review"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('[data-testid="score-bar"]')).toContainText('Live mic practice');
+    expect(await page.evaluate(() => window.__speech.active)).toBeNull();
+
+    // And you can get back to the demo.
+    await page.locator('[data-testid="screen-tab-live"]').click();
+    await page.getByRole('button', { name: 'Clear' }).click();
+    await page.locator('[data-testid="back-to-demo"]').click();
+    await expect(page.locator('[data-testid="active-scenario-name"]')).toContainText('Q2 roadmap');
+  });
+
+  test('Record meeting is disabled without speech recognition', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(window, 'SpeechRecognition', { value: undefined });
+      Object.defineProperty(window, 'webkitSpeechRecognition', { value: undefined });
+    });
+    await bootApp(page);
+    await page.locator('[data-testid="screen-tab-live"]').click();
+    await expect(page.locator('[data-testid="start-recording"]')).toBeDisabled();
+  });
+});

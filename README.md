@@ -40,7 +40,10 @@ rewrites, transcript); **Share review** copies it to the clipboard.
 
 ## Live mic practice
 
-Tweaks → Scenario → **Live mic (practice)**, then **Start mic**. Your own speech
+Click **Record meeting** on the Live screen (or the idle screen). It switches
+to the live mic and starts listening in one click; **Stop & review** opens the
+scored Review, and **Back to demo** returns to the scripted meetings. (Also
+reachable via Tweaks → Scenario → **Live mic (practice)**.) Your own speech
 becomes the transcript (the browser's Web Speech API: Chrome, Edge, Safari —
 in Chrome the audio is sent to Google for recognition).
 Coaching cues come from what you actually said (`deriveCoaching`: filler
