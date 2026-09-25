@@ -14,7 +14,9 @@ const { test, expect } = require('@playwright/test');
 
 const path = require('path');
 
-const APP_PATH = '/Talksmith.html';
+// Dev page by default; `npm run test:dist` runs the same suite against the
+// production build (TALKSMITH_APP=/dist/index.html).
+const APP_PATH = process.env.TALKSMITH_APP || '/Talksmith.html';
 const NODE_MODULES = path.resolve(__dirname, '..', 'node_modules');
 
 // Serve the CDN scripts from node_modules so the suite is hermetic: no
@@ -394,10 +396,11 @@ test.describe('profile trend charts', () => {
 
 test.describe('boot resilience', () => {
   test('a CDN failure replaces the spinner with a clear message', async ({ page, context }) => {
-    // Registered after the beforeEach routes, so it takes precedence.
-    await context.route('https://unpkg.com/react@18.3.1/umd/react.production.min.js', r => r.abort());
+    // Registered after the beforeEach routes, so it takes precedence. Matches
+    // the CDN URL (dev page) and the vendored file (build) alike.
+    await context.route(/\/react(@[\d.]+\/umd\/react|-[\d.]+\.[0-9a-f]+)\.(production\.)?min\.js$/, r => r.abort());
     await page.goto(APP_PATH);
     await expect(page.locator('.ts-boot--failed')).toBeVisible();
-    await expect(page.locator('.ts-boot__hint')).toContainText("Couldn't load unpkg.com/react@18.3.1");
+    await expect(page.locator('.ts-boot__hint')).toContainText("Couldn't load");
   });
 });
