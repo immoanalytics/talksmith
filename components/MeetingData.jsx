@@ -148,6 +148,7 @@ const SCENARIOS = {
     id: 'q2_roadmap',
     name: 'Q2 roadmap sync',
     summary: 'Pushback on a quarter; recovery after concessions',
+    daysAgo: 41,   // when it happened — drives the Profile time ranges
     duration: 175,
     startAt: 48,
     pplCount: 4,
@@ -163,6 +164,7 @@ const SCENARIOS = {
     id: 'tense_1on1',
     name: 'Skip-level feedback',
     summary: 'Hard feedback delivered in person; tone coach is busy',
+    daysAgo: 12,
     duration: 180,
     startAt: 0,
     pplCount: 2,
@@ -234,6 +236,7 @@ const SCENARIOS = {
     id: 'clear_decision',
     name: 'Eng standup decision',
     summary: 'Crisp decision; coach is mostly silent (empty-state demo)',
+    daysAgo: 3,
     duration: 100,
     startAt: 0,
     pplCount: 4,
@@ -703,6 +706,10 @@ function analyzeTranscript(script, participants, meId = 'you') {
   };
 }
 
+// Composite weights for the overall score. Exported so "Explain model"
+// shows the numbers actually used.
+const OVERALL_WEIGHTS = { balance: 0.18, clarity: 0.27, influence: 0.27, listening: 0.28 };
+
 // Turn an analysis into the four user-facing scores plus a composite grade.
 // Each score carries the concrete signals that produced it (explainability).
 function scoreFromAnalysis(a) {
@@ -731,8 +738,9 @@ function scoreFromAnalysis(a) {
 
   // Composite: balance (from talk ratio) + the three skill scores.
   const balance = clamp(100 - Math.max(0, a.talkPct - 50) * 2);
-  const overall = round(0.18 * balance + 0.27 * clarity + 0.27 * influence + 0.28 * listening);
-  const grade = overall >= 85 ? 'A' : overall >= 75 ? 'B' : overall >= 65 ? 'C' : overall >= 55 ? 'D' : 'E';
+  const W = OVERALL_WEIGHTS;
+  const overall = round(W.balance * balance + W.clarity * clarity + W.influence * influence + W.listening * listening);
+  const grade = gradeFor(overall);
 
   const pct = (x) => `${Math.round(x * 100)}%`;
   return {
@@ -781,13 +789,26 @@ function nudgeImpact(n) {
   return { critical: 1, suggest: 0.65, insight: 0.5 }[n.type] ?? 0.5;
 }
 
+// Letter grade for a 0–100 composite.
+function gradeFor(overall) {
+  return overall >= 85 ? 'A' : overall >= 75 ? 'B' : overall >= 65 ? 'C' : overall >= 55 ? 'D' : 'E';
+}
+
+// Profile time ranges, in days (null = all time).
+const PROFILE_RANGES = { '7d': 7, '30d': 30, '90d': 90, 'All': null };
+
 // Personal learning model — aggregates the user's recent meetings (the
 // scenario library, treated as meeting history) into the numbers the Profile
 // screen shows. Derived from the same scoring engine, so Profile agrees with
-// Live and Review instead of inventing its own figures.
-function profileModel() {
-  const scored = Object.values(SCENARIOS).map(s => ({ scenario: s, ...scoreScenario(s) }));
-  const n = scored.length || 1;
+// Live and Review instead of inventing its own figures. `rangeDays` limits it
+// to meetings from the last N days; `n` is 0 when none fall in the range.
+function profileModel({ rangeDays = null } = {}) {
+  const scored = Object.values(SCENARIOS)
+    .filter(s => rangeDays == null || (s.daysAgo ?? 0) <= rangeDays)
+    .map(s => ({ scenario: s, ...scoreScenario(s) }))
+    .sort((a, b) => (b.scenario.daysAgo ?? 0) - (a.scenario.daysAgo ?? 0)); // oldest first
+  const count = scored.length;
+  const n = count || 1;
   const avg = (sel) => scored.reduce((a, x) => a + sel(x), 0) / n;
 
   const avgTalk = Math.round(avg(x => x.talkRatio));
@@ -796,7 +817,7 @@ function profileModel() {
   const avgInfluence = Math.round(avg(x => x.influence));
   const avgEngagement = Math.round(avg(x => x.engagement));
   const avgOverall = Math.round(avg(x => x.overall));
-  const overallGrade = avgOverall >= 85 ? 'A' : avgOverall >= 75 ? 'B' : avgOverall >= 65 ? 'C' : avgOverall >= 55 ? 'D' : 'E';
+  const overallGrade = gradeFor(avgOverall);
 
   const totalInterruptions = scored.reduce((a, x) => a + x.analysis.youInterruptedOthers, 0);
   const interruptionsPerMtg = +(totalInterruptions / n).toFixed(1);
@@ -809,7 +830,7 @@ function profileModel() {
   ].sort((a, b) => b.v - a.v);
   const strongest = skills[0], weakest = skills[skills.length - 1];
 
-  const byInterrupt = scored.slice().sort((a, b) => b.analysis.youInterruptedOthers - a.analysis.youInterruptedOthers)[0];
+  const byInterrupt = scored.slice().sort((a, b) => b.analysis.youInterruptedOthers - a.analysis.youInterruptedOthers)[0] || null;
 
   // Sign of the turn-length ↔ clarity relationship across meetings, so the
   // "what the model learned" note is actually backed by the data on screen.
@@ -826,11 +847,18 @@ function profileModel() {
     balance: Math.round(clamp(100 - Math.max(0, avgTalk - 50) * 2)),
   };
 
+  // One point per meeting, oldest → newest, for the Profile trend charts.
+  const series = scored.map(x => ({
+    id: x.scenario.id, name: x.scenario.name, daysAgo: x.scenario.daysAgo ?? 0,
+    talk: x.talkRatio, listening: x.listening,
+    interruptions: x.analysis.youInterruptedOthers,
+  }));
+
   return {
-    n, avgTalk, avgClarity, avgListening, avgInfluence, avgEngagement,
+    n: count, avgTalk, avgClarity, avgListening, avgInfluence, avgEngagement,
     avgOverall, overallGrade, totalInterruptions, interruptionsPerMtg,
     avgFillerRate, strongest, weakest, byInterrupt, shorterTurnsClearer,
-    goalProgress, scored,
+    goalProgress, scored, series,
   };
 }
 
@@ -868,5 +896,6 @@ window.MeetingData = {
   COACHES, GOAL_COACH_WEIGHTS, SCENARIOS,
   fmtTime, useMeetingSim, deriveMetrics, moodAt,
   analyzeTranscript, scoreFromAnalysis, scoreScenario, nudgeImpact, profileModel,
+  PROFILE_RANGES, gradeFor, OVERALL_WEIGHTS,
   buildReviewNotes,
 };

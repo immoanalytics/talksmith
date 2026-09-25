@@ -63,6 +63,10 @@ function App() {
   const [idle, setIdle] = React.useState(false);
   const [activeGoal, setActiveGoal] = React.useState(() =>
     loadPref('talksmith.goal', 'listen', Object.keys(MeetingData.GOAL_COACH_WEIGHTS)));
+  const [profileRange, setProfileRange] = React.useState(() =>
+    loadPref('talksmith.profileRange', 'All', Object.keys(MeetingData.PROFILE_RANGES)));
+  const [explainOpen, setExplainOpen] = React.useState(false);
+  const closeExplain = React.useCallback(() => setExplainOpen(false), []);
   const [scenarioId, setScenarioId] = React.useState(() => {
     const v = loadPref('talksmith.scenario', 'q2_roadmap');
     return MeetingData.SCENARIOS[v] ? v : 'q2_roadmap';
@@ -75,6 +79,7 @@ function App() {
   React.useEffect(() => { try { localStorage.setItem('talksmith.goal', activeGoal); } catch {} }, [activeGoal]);
   React.useEffect(() => { try { localStorage.setItem('talksmith.muted', muted ? '1' : '0'); } catch {} }, [muted]);
   React.useEffect(() => { try { localStorage.setItem('talksmith.scenario', scenarioId); } catch {} }, [scenarioId]);
+  React.useEffect(() => { try { localStorage.setItem('talksmith.profileRange', profileRange); } catch {} }, [profileRange]);
 
   // Pause the live sim when the user isn't on a screen that consumes it.
   // Profile/Review don't read sim state; ticking it is wasted work and the
@@ -233,7 +238,9 @@ function App() {
               {Object.keys(MeetingData.SCENARIOS).length} meetings analyzed
             </span>
             <div style={{ flex: 1 }}/>
-            <button style={subBtn(false)}>Explain model</button>
+            <button data-testid="explain-model-button" onClick={() => setExplainOpen(true)} style={subBtn(explainOpen)}>
+              Explain model
+            </button>
           </>
         )}
       </div>
@@ -251,7 +258,9 @@ function App() {
         <Review sim={reviewSim} t={reviewT} setT={setReviewT}
           playing={reviewPlaying} onTogglePlay={() => setReviewPlaying(p => !p)}/>
       ) : (
-        <Profile activeGoal={activeGoal} setActiveGoal={setActiveGoal}/>
+        <Profile activeGoal={activeGoal} setActiveGoal={setActiveGoal}
+          range={profileRange} setRange={setProfileRange}
+          explainOpen={explainOpen} onCloseExplain={closeExplain}/>
       )}
 
       <div style={{

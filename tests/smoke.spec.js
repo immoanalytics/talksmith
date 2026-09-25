@@ -404,3 +404,53 @@ test.describe('boot resilience', () => {
     await expect(page.locator('.ts-boot__hint')).toContainText("Couldn't load");
   });
 });
+
+test.describe('profile controls', () => {
+  test('range buttons filter the meetings the model uses', async ({ page }) => {
+    await bootApp(page);
+    await page.locator('[data-testid="screen-tab-profile"]').click();
+    const counts = await page.evaluate(() => {
+      const md = window.MeetingData;
+      const out = {};
+      for (const [k, d] of Object.entries(md.PROFILE_RANGES)) out[k] = md.profileModel({ rangeDays: d }).n;
+      return out;
+    });
+    // Fewer days can never include more meetings.
+    expect(counts['7d']).toBeLessThanOrEqual(counts['30d']);
+    expect(counts['30d']).toBeLessThan(counts['All']);
+    for (const r of ['7d', '30d', 'All']) {
+      await page.locator(`[data-testid="range-${r}"]`).click();
+      await expect(page.locator(`[data-testid="range-${r}"]`)).toHaveAttribute('aria-pressed', 'true');
+      // One chart point per meeting in range (3 charts).
+      await expect(page.locator('[data-testid="trend-chart"] circle')).toHaveCount(counts[r] * 3);
+    }
+  });
+
+  test('goal targets are editable and persist', async ({ page }) => {
+    await bootApp(page);
+    await page.locator('[data-testid="screen-tab-profile"]').click();
+    await page.locator('[data-testid="edit-targets"]').click();
+    await page.locator('[data-testid="target-listen"]').fill('40');
+    await page.locator('[data-testid="edit-targets"]').click();
+    const listening = await page.evaluate(() => window.MeetingData.profileModel().goalProgress.listen);
+    const delta = listening - 40;
+    await expect(page.getByText(`${delta > 0 ? '+' : ''}${delta}`, { exact: true }).first()).toBeVisible();
+    await page.reload();
+    await page.locator('[data-testid="title-bar"]').waitFor();
+    await page.locator('[data-testid="edit-targets"]').click();
+    await expect(page.locator('[data-testid="target-listen"]')).toHaveValue('40');
+  });
+
+  test('Explain model opens a dialog with the per-meeting scores and closes on Escape', async ({ page }) => {
+    await bootApp(page);
+    await page.locator('[data-testid="screen-tab-profile"]').click();
+    await page.locator('[data-testid="explain-model-button"]').click();
+    const dialog = page.getByRole('dialog', { name: 'How your scores are computed' });
+    await expect(dialog).toBeVisible();
+    for (const s of ['Q2 roadmap sync', 'Skip-level feedback', 'Eng standup decision']) {
+      await expect(dialog).toContainText(s);
+    }
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+  });
+});
