@@ -4,16 +4,25 @@
   "version": "0.1.0",
   "description": "Real-time meeting coach UI prototype",
   "scripts": {
+    "build": "node scripts/build.cjs",
+    "start": "node scripts/serve.cjs dist",
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:install": "playwright install --with-deps chromium",
     "components:sync": "node scripts/extract-components.cjs",
-    "components:check": "node scripts/extract-components.cjs --check"
+    "components:check": "node scripts/extract-components.cjs --check",
+    "test:dist": "npm run build && TALKSMITH_APP=/dist/index.html playwright test"
   },
   "devDependencies": {
     "@babel/standalone": "7.29.0",
-    "@playwright/test": "^1.48.2",
+    "@playwright/test": "^1.48.2"
+  },
+  "dependencies": {
+    "esbuild": "0.28.2",
     "react": "18.3.1",
     "react-dom": "18.3.1"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

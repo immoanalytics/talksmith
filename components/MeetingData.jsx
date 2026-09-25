@@ -148,6 +148,7 @@ const SCENARIOS = {
     id: 'q2_roadmap',
     name: 'Q2 roadmap sync',
     summary: 'Pushback on a quarter; recovery after concessions',
+    daysAgo: 41,   // when it happened — drives the Profile time ranges
     duration: 175,
     startAt: 48,
     pplCount: 4,
@@ -163,6 +164,7 @@ const SCENARIOS = {
     id: 'tense_1on1',
     name: 'Skip-level feedback',
     summary: 'Hard feedback delivered in person; tone coach is busy',
+    daysAgo: 12,
     duration: 180,
     startAt: 0,
     pplCount: 2,
@@ -234,6 +236,7 @@ const SCENARIOS = {
     id: 'clear_decision',
     name: 'Eng standup decision',
     summary: 'Crisp decision; coach is mostly silent (empty-state demo)',
+    daysAgo: 3,
     duration: 100,
     startAt: 0,
     pplCount: 4,
@@ -277,11 +280,13 @@ function fmtTime(s) {
 // on boundary indices so they only recompute when something actually changed —
 // not on every 100ms tick. This keeps each tick at near-zero CPU outside of
 // transcript/nudge transitions.
-function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', scenarioId = 'q2_roadmap' }) {
-  // Resolve the scenario once per render. The inner names shadow the
-  // module-level defaults so the existing references inside this hook
-  // (SCRIPT, NUDGE_SCRIPT, PARTICIPANTS) keep working without rewrite.
-  const scenario = SCENARIOS[scenarioId] || SCENARIOS.q2_roadmap;
+function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', scenarioId = 'q2_roadmap', scenario: override }) {
+  // Resolve the scenario once per render. `override` supplies a scenario that
+  // isn't in the library (the live mic session, which grows as you speak).
+  // The inner names shadow the module-level defaults so the existing
+  // references inside this hook (SCRIPT, NUDGE_SCRIPT, PARTICIPANTS) keep
+  // working without rewrite.
+  const scenario = override || SCENARIOS[scenarioId] || SCENARIOS.q2_roadmap;
   const SCRIPT = scenario.script;
   const NUDGE_SCRIPT = scenario.nudges;
   const PARTICIPANTS = scenario.participants;
@@ -313,7 +318,7 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
     const id = setInterval(() => {
       setT(prev => {
         const next = prev + 0.1 * speed;
-        if (next > totalDuration) {
+        if (next > totalDuration && !scenario.openEnded) {
           // Meeting looped — let suppressed cues come back so a re-watch isn't muted.
           setSuppressed(new Map());
           return 0;
@@ -322,18 +327,18 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
       });
     }, 100);
     return () => clearInterval(id);
-  }, [running, speed, totalDuration]);
+  }, [running, speed, totalDuration, scenario.openEnded]);
 
-  // Transcript: stable until we cross a script line boundary OR the user
-  // swaps scenarios (which changes SCRIPT under our feet).
+  // Transcript: stable until we cross a script line boundary OR the scenario
+  // object changes (a different scenario, or new mic lines arriving).
   const transcriptCount = React.useMemo(() => {
     let i = 0;
     while (i < SCRIPT.length && SCRIPT[i].t <= t) i++;
     return i;
-  }, [t, scenarioId]);
+  }, [t, scenario]);
   const transcript = React.useMemo(
     () => SCRIPT.slice(0, transcriptCount),
-    [transcriptCount, scenarioId] // eslint-disable-line react-hooks/exhaustive-deps
+    [transcriptCount, scenario] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Candidate cues: window membership only changes at nudge t / t+duration
@@ -343,7 +348,7 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
       .filter(n => t >= n.t && t <= n.t + n.duration)
       .map(n => n.id)
       .join(','),
-    [t, scenarioId]
+    [t, scenario]
   );
   const candidates = React.useMemo(
     () => NUDGE_SCRIPT.filter(n => {
@@ -354,7 +359,7 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
       if (s.mode === 'snooze') return s.until <= t;
       return true;
     }),
-    [candidateIds, suppressed, t, scenarioId] // eslint-disable-line react-hooks/exhaustive-deps
+    [candidateIds, suppressed, t, scenario] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Head coach: hard cap of 2 simultaneous cues. Priority blends urgency tier
@@ -391,11 +396,11 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
   // scenario itself changes (different nudge set).
   const historyCount = React.useMemo(
     () => NUDGE_SCRIPT.filter(n => t >= n.t).length,
-    [t, scenarioId]
+    [t, scenario]
   );
   const nudgeHistory = React.useMemo(
     () => NUDGE_SCRIPT.filter(n => t >= n.t).slice().reverse(),
-    [historyCount, scenarioId] // eslint-disable-line react-hooks/exhaustive-deps
+    [historyCount, scenario] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Metrics: split heavy work. The text analysis only re-runs when the
@@ -703,6 +708,10 @@ function analyzeTranscript(script, participants, meId = 'you') {
   };
 }
 
+// Composite weights for the overall score. Exported so "Explain model"
+// shows the numbers actually used.
+const OVERALL_WEIGHTS = { balance: 0.18, clarity: 0.27, influence: 0.27, listening: 0.28 };
+
 // Turn an analysis into the four user-facing scores plus a composite grade.
 // Each score carries the concrete signals that produced it (explainability).
 function scoreFromAnalysis(a) {
@@ -731,8 +740,9 @@ function scoreFromAnalysis(a) {
 
   // Composite: balance (from talk ratio) + the three skill scores.
   const balance = clamp(100 - Math.max(0, a.talkPct - 50) * 2);
-  const overall = round(0.18 * balance + 0.27 * clarity + 0.27 * influence + 0.28 * listening);
-  const grade = overall >= 85 ? 'A' : overall >= 75 ? 'B' : overall >= 65 ? 'C' : overall >= 55 ? 'D' : 'E';
+  const W = OVERALL_WEIGHTS;
+  const overall = round(W.balance * balance + W.clarity * clarity + W.influence * influence + W.listening * listening);
+  const grade = gradeFor(overall);
 
   const pct = (x) => `${Math.round(x * 100)}%`;
   return {
@@ -781,13 +791,211 @@ function nudgeImpact(n) {
   return { critical: 1, suggest: 0.65, insight: 0.5 }[n.type] ?? 0.5;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Live mic practice — your own speech instead of a scripted meeting.
+//
+// The browser's speech recognition produces final lines ({ t, s: 'you', txt });
+// micScenario() wraps them in a normal scenario object, so the live
+// dashboard, Review, scoring and Export all work unchanged. Coaching cues are
+// derived from the words by deriveCoaching(), not scripted.
+// ─────────────────────────────────────────────────────────────────────────
+
+const MIC_SCENARIO_ID = 'mic';
+const MIC_PARTICIPANTS = [
+  { id: 'you', name: 'You', color: 'oklch(0.72 0.14 250)', initials: 'YA', role: 'Speaker' },
+];
+
+// Each rule fires at most once, on the first line where it becomes true, so a
+// cue's id and timing are stable as the transcript grows.
+const MIC_RULES = [
+  { id: 'mic-fillers', coach: 'clarity', type: 'suggest', tone: 'amber', timeline: 'Filler words',
+    when: (a) => a.yourWords >= 40 && a.fillerRate > 3,
+    make: (a) => ({
+      title: 'Filler words creeping in',
+      detail: `${a.fillers} fillers so far (${a.fillerRate.toFixed(1)} per 100 words).`,
+      signals: [`${a.fillers} fillers`, `${a.fillerRate.toFixed(1)}/100 words`],
+      why: 'A short silence reads as confidence; "um" and "like" read as uncertainty.',
+      action: { label: 'Try this', phrase: '"Pause for a beat instead of filling the gap."' },
+      confidence: 0.8,
+    }) },
+  { id: 'mic-hedges', coach: 'influence', type: 'suggest', tone: 'amber', timeline: 'Heavy hedging',
+    when: (a) => a.yourWords >= 40 && a.hedgeRate > 4,
+    make: (a) => ({
+      title: 'Lots of hedging',
+      detail: `${a.hedges} hedges ("maybe", "I think", "just"…) — your point sounds optional.`,
+      signals: [`${a.hedges} hedges`, `${a.hedgeRate.toFixed(1)}/100 words`],
+      why: 'Stating the recommendation plainly makes it easier for others to agree or push back.',
+      action: { label: 'Try this', phrase: '"I recommend we…" instead of "I think maybe we could…"' },
+      confidence: 0.75,
+    }) },
+  { id: 'mic-long-turns', coach: 'clarity', type: 'insight', tone: 'blue', timeline: 'Long sentences',
+    when: (a, lines) => lines.length >= 3 && a.avgTurnWords > 35,
+    make: (a) => ({
+      title: 'Land the point sooner',
+      detail: `Your sentences average ${Math.round(a.avgTurnWords)} words.`,
+      signals: [`Avg ${Math.round(a.avgTurnWords)} words/sentence`],
+      why: 'Shorter sentences are easier to follow when people are only listening.',
+      action: null,
+      confidence: 0.65,
+    }) },
+  { id: 'mic-pace', coach: 'tone', type: 'suggest', tone: 'amber', timeline: 'Speaking fast',
+    when: (a, lines) => micWpm(lines) > 175 && lines[lines.length - 1].t - lines[0].t >= 20,
+    make: (a, lines) => ({
+      title: "You're speaking fast",
+      detail: `About ${Math.round(micWpm(lines))} words per minute — conversational is 130–160.`,
+      signals: [`${Math.round(micWpm(lines))} wpm`],
+      why: 'Slowing down gives listeners time to absorb each point and signals calm.',
+      action: null,
+      confidence: 0.7,
+    }) },
+  { id: 'mic-question', coach: 'listening', type: 'insight', tone: 'green', positive: true, timeline: 'Invited input',
+    when: (a) => a.openQuestions > 0,
+    make: () => ({
+      title: 'Good — an open question',
+      detail: 'Open questions invite real input instead of yes/no answers.',
+      signals: ['Open question asked'],
+      why: 'Reinforcement — this is the habit that raises your listening score.',
+      action: null,
+      confidence: 0.85,
+    }) },
+  { id: 'mic-clean', coach: 'clarity', type: 'insight', tone: 'green', positive: true, timeline: 'Clean delivery',
+    when: (a) => a.yourWords >= 80 && a.fillerRate < 1 && a.hedgeRate < 2,
+    make: () => ({
+      title: 'Clean, direct delivery',
+      detail: 'Almost no fillers or hedges so far. Keep it up.',
+      signals: ['Fillers < 1/100 words', 'Few hedges'],
+      why: 'Reinforcement — clear, committed language is what makes points land.',
+      action: null,
+      confidence: 0.8,
+    }) },
+];
+
+// Words per minute across the session, from the recognized lines' timestamps.
+// The last line's own speaking time is estimated so short sessions aren't inflated.
+function micWpm(lines) {
+  if (!lines.length) return 0;
+  const words = lines.reduce((n, l) => n + wordCount(l.txt), 0);
+  const last = lines[lines.length - 1];
+  const secs = Math.max(5, last.t - lines[0].t + (wordCount(last.txt) / SPEAK_WPM) * 60);
+  return words / (secs / 60);
+}
+
+// Coaching cues + timeline moments for a transcript, derived from the words.
+function deriveCoaching(lines, participants = MIC_PARTICIPANTS) {
+  const nudges = [], timeline = [], fired = new Set();
+  for (let i = 0; i < lines.length; i++) {
+    const prefix = lines.slice(0, i + 1);
+    const a = analyzeTranscript(prefix, participants, 'you');
+    for (const r of MIC_RULES) {
+      if (fired.has(r.id) || !r.when(a, prefix)) continue;
+      fired.add(r.id);
+      const t = lines[i].t;
+      nudges.push({ id: r.id, t, coach: r.coach, type: r.type, tone: r.tone,
+        positive: !!r.positive, duration: 15, ...r.make(a, prefix) });
+      timeline.push({ t, type: r.id.replace('mic-', ''), label: r.timeline, tone: r.tone });
+    }
+  }
+  return { nudges, timeline };
+}
+
+// A scenario object for a live mic session so far.
+function micScenario(lines, promptId = 'free') {
+  const last = lines[lines.length - 1];
+  const prompt = practicePrompt(promptId);
+  return {
+    id: MIC_SCENARIO_ID,
+    name: 'Live mic practice',
+    summary: prompt.id === 'free' ? 'Your own speech, transcribed by your browser' : prompt.title,
+    prompt,
+    daysAgo: 0,
+    openEnded: true, // the clock runs as long as you talk; it never loops
+    duration: Math.max(60, last ? Math.ceil(last.t + 15) : 0),
+    startAt: 0,
+    pplCount: 1,
+    participants: MIC_PARTICIPANTS,
+    script: lines,
+    ...deriveCoaching(lines),
+  };
+}
+
+// Practice prompts for solo mic sessions. `targetSec` is the time goal the
+// Outcomes coach tracks (null = open-ended).
+const PRACTICE_PROMPTS = [
+  { id: 'free', title: 'Free practice', text: 'Talk through whatever is on your mind — a plan, an update, a pitch.', targetSec: null },
+  { id: 'pitch', title: 'Pitch your top priority', text: 'Make the case for your single most important priority this quarter. Lead with the recommendation.', targetSec: 60 },
+  { id: 'pushback', title: 'Push back on a deadline', text: 'A stakeholder wants it two weeks early. Say no — kindly, clearly, with an alternative.', targetSec: 90 },
+  { id: 'feedback', title: 'Give tough feedback', text: 'Tell a strong teammate that how they ran the last project hurt the team. Be specific and kind.', targetSec: 120 },
+  { id: 'decision', title: 'Summarize a decision', text: 'Close a meeting: state what was decided, who owns what, and by when.', targetSec: 45 },
+];
+function practicePrompt(id) {
+  return PRACTICE_PROMPTS.find(p => p.id === id) || PRACTICE_PROMPTS[0];
+}
+
+// Headline numbers for one practice session (Profile's practice panel).
+function sessionStats(lines) {
+  const a = analyzeTranscript(lines, MIC_PARTICIPANTS, 'you');
+  const s = scoreFromAnalysis(a);
+  const last = lines[lines.length - 1];
+  return {
+    words: a.yourWords,
+    durationSec: last ? Math.round(last.t - lines[0].t + (wordCount(last.txt) / SPEAK_WPM) * 60) : 0,
+    clarity: s.clarity,
+    fillerRate: +a.fillerRate.toFixed(1),
+    hedgeRate: +a.hedgeRate.toFixed(1),
+    wpm: Math.round(micWpm(lines)),
+  };
+}
+
+// Saved practice sessions live only in this browser (localStorage), newest
+// first, capped so storage can't grow without bound.
+const SESSIONS_KEY = 'talksmith.sessions';
+const MAX_SESSIONS = 50;
+function loadSessions() {
+  try {
+    const v = JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]');
+    return Array.isArray(v)
+      ? v.filter(x => x && typeof x.id === 'string' && Array.isArray(x.lines) && x.lines.length)
+      : [];
+  } catch { return []; }
+}
+function writeSessions(list) {
+  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(list.slice(0, MAX_SESSIONS))); return true; }
+  catch { return false; }
+}
+function saveSession(lines, promptId = 'free', now = new Date()) {
+  if (!lines.length) return null;
+  const session = {
+    id: `s-${now.getTime()}`,
+    savedAt: now.toISOString(),
+    promptId: practicePrompt(promptId).id,
+    lines: lines.map(l => ({ t: l.t, s: 'you', txt: l.txt })),
+  };
+  return writeSessions([session, ...loadSessions()]) ? session : null;
+}
+function deleteSession(id) {
+  writeSessions(loadSessions().filter(x => x.id !== id));
+}
+
+// Letter grade for a 0–100 composite.
+function gradeFor(overall) {
+  return overall >= 85 ? 'A' : overall >= 75 ? 'B' : overall >= 65 ? 'C' : overall >= 55 ? 'D' : 'E';
+}
+
+// Profile time ranges, in days (null = all time).
+const PROFILE_RANGES = { '7d': 7, '30d': 30, '90d': 90, 'All': null };
+
 // Personal learning model — aggregates the user's recent meetings (the
 // scenario library, treated as meeting history) into the numbers the Profile
 // screen shows. Derived from the same scoring engine, so Profile agrees with
-// Live and Review instead of inventing its own figures.
-function profileModel() {
-  const scored = Object.values(SCENARIOS).map(s => ({ scenario: s, ...scoreScenario(s) }));
-  const n = scored.length || 1;
+// Live and Review instead of inventing its own figures. `rangeDays` limits it
+// to meetings from the last N days; `n` is 0 when none fall in the range.
+function profileModel({ rangeDays = null } = {}) {
+  const scored = Object.values(SCENARIOS)
+    .filter(s => rangeDays == null || (s.daysAgo ?? 0) <= rangeDays)
+    .map(s => ({ scenario: s, ...scoreScenario(s) }))
+    .sort((a, b) => (b.scenario.daysAgo ?? 0) - (a.scenario.daysAgo ?? 0)); // oldest first
+  const count = scored.length;
+  const n = count || 1;
   const avg = (sel) => scored.reduce((a, x) => a + sel(x), 0) / n;
 
   const avgTalk = Math.round(avg(x => x.talkRatio));
@@ -796,7 +1004,7 @@ function profileModel() {
   const avgInfluence = Math.round(avg(x => x.influence));
   const avgEngagement = Math.round(avg(x => x.engagement));
   const avgOverall = Math.round(avg(x => x.overall));
-  const overallGrade = avgOverall >= 85 ? 'A' : avgOverall >= 75 ? 'B' : avgOverall >= 65 ? 'C' : avgOverall >= 55 ? 'D' : 'E';
+  const overallGrade = gradeFor(avgOverall);
 
   const totalInterruptions = scored.reduce((a, x) => a + x.analysis.youInterruptedOthers, 0);
   const interruptionsPerMtg = +(totalInterruptions / n).toFixed(1);
@@ -809,7 +1017,7 @@ function profileModel() {
   ].sort((a, b) => b.v - a.v);
   const strongest = skills[0], weakest = skills[skills.length - 1];
 
-  const byInterrupt = scored.slice().sort((a, b) => b.analysis.youInterruptedOthers - a.analysis.youInterruptedOthers)[0];
+  const byInterrupt = scored.slice().sort((a, b) => b.analysis.youInterruptedOthers - a.analysis.youInterruptedOthers)[0] || null;
 
   // Sign of the turn-length ↔ clarity relationship across meetings, so the
   // "what the model learned" note is actually backed by the data on screen.
@@ -826,11 +1034,18 @@ function profileModel() {
     balance: Math.round(clamp(100 - Math.max(0, avgTalk - 50) * 2)),
   };
 
+  // One point per meeting, oldest → newest, for the Profile trend charts.
+  const series = scored.map(x => ({
+    id: x.scenario.id, name: x.scenario.name, daysAgo: x.scenario.daysAgo ?? 0,
+    talk: x.talkRatio, listening: x.listening,
+    interruptions: x.analysis.youInterruptedOthers,
+  }));
+
   return {
-    n, avgTalk, avgClarity, avgListening, avgInfluence, avgEngagement,
+    n: count, avgTalk, avgClarity, avgListening, avgInfluence, avgEngagement,
     avgOverall, overallGrade, totalInterruptions, interruptionsPerMtg,
     avgFillerRate, strongest, weakest, byInterrupt, shorterTurnsClearer,
-    goalProgress, scored,
+    goalProgress, scored, series,
   };
 }
 
@@ -868,5 +1083,8 @@ window.MeetingData = {
   COACHES, GOAL_COACH_WEIGHTS, SCENARIOS,
   fmtTime, useMeetingSim, deriveMetrics, moodAt,
   analyzeTranscript, scoreFromAnalysis, scoreScenario, nudgeImpact, profileModel,
+  PROFILE_RANGES, gradeFor, OVERALL_WEIGHTS,
+  MIC_SCENARIO_ID, micScenario, deriveCoaching, micWpm,
+  PRACTICE_PROMPTS, practicePrompt, sessionStats, loadSessions, saveSession, deleteSession,
   buildReviewNotes,
 };

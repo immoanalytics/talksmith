@@ -1,10 +1,10 @@
 // LiveDashboard.jsx — the main screen
 
-function Transcript({ transcript, participants, t }) {
+function Transcript({ transcript, participants, t, interim = '', prompt = null }) {
   const scrollRef = React.useRef();
   React.useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [transcript.length]);
+  }, [transcript.length, interim]);
 
   const p = (id) => participants.find(x => x.id === id);
   const last = transcript[transcript.length - 1];
@@ -59,11 +59,29 @@ function Transcript({ transcript, participants, t }) {
           </div>
         );
       })}
-      {transcript.length === 0 && (
+      {interim && (
+        <div data-testid="interim-transcript" style={{
+          marginTop: 2, paddingLeft: 25, fontSize: 13, lineHeight: 1.55,
+          color: 'var(--ink-3)', fontStyle: 'italic',
+        }}>
+          {interim}<TypingCaret />
+        </div>
+      )}
+      {transcript.length === 0 && !interim && (prompt ? (
+        <div data-testid="practice-prompt-card" style={{
+          margin: '12px 0', padding: 14, borderRadius: 8,
+          background: 'var(--bg-inset)', border: '1px solid var(--line-soft)',
+        }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>
+            {prompt.title}{prompt.targetSec ? ` · aim for ${prompt.targetSec}s` : ''}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--ink-1)', lineHeight: 1.5 }}>{prompt.text}</div>
+        </div>
+      ) : (
         <div style={{ padding: 20, textAlign: 'center', color: 'var(--ink-3)', fontSize: 12 }}>
           Waiting for audio…
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -302,8 +320,11 @@ function HighAlertFrame({ active }) {
   );
 }
 
-function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant, speed, onSpeed }) {
+function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant, speed, onSpeed, interim = '' }) {
   const highAlert = sim.activeNudges.some(n => n.tone === 'rose');
+  // Solo practice (live mic) has no one to share the floor with, so the
+  // group-balance readouts would only ever say "100% you".
+  const solo = sim.participants.length < 2;
 
   return (
     <div style={{
@@ -333,7 +354,8 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
           </div>
         }
       >
-        <Transcript transcript={sim.transcript} participants={sim.participants} t={sim.t}/>
+        <Transcript transcript={sim.transcript} participants={sim.participants} t={sim.t} interim={interim}
+          prompt={sim.scenario.prompt || null}/>
       </Panel>
 
       {/* CENTER — Guidance, from the head coach */}
@@ -346,13 +368,13 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
             <IconButton tip={running ? 'Pause (Space)' : 'Resume (Space)'} onClick={onToggleRun}>
               {running ? I('pause', { size: 12 }) : I('play', { size: 12 })}
             </IconButton>
-            <button onClick={() => onSpeed(speed === 1 ? 2 : speed === 2 ? 4 : 1)}
+            {!solo && <button onClick={() => onSpeed(speed === 1 ? 2 : speed === 2 ? 4 : 1)}
               className="mono"
               style={{
                 border: '1px solid var(--line)', background: 'var(--bg-inset)',
                 color: 'var(--ink-1)', fontSize: 10.5, padding: '3px 6px',
                 borderRadius: 5, cursor: 'pointer', minWidth: 28,
-              }}>{speed}×</button>
+              }}>{speed}×</button>}
             <IconButton tip="Mute coaching (⌘M)" onClick={onToggleMute} active={muted} danger={muted}>
               {muted ? I('bellOff', { size: 12 }) : I('bell', { size: 12 })}
             </IconButton>
@@ -386,7 +408,7 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
         <div className="scroll" style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 18, minHeight: 0 }}>
           {/* Listening coach — your talk/silence balance */}
           <CoachBlock name="Listening coach" scope="watching you">
-            <div>
+            {!solo && <div>
               <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
                 <span className="eyebrow">Speaking time</span>
                 <div style={{ flex: 1 }}/>
@@ -395,7 +417,7 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
                 )}
               </div>
               <TalkRatioBar participants={sim.metrics.talkRatio}/>
-            </div>
+            </div>}
             <div>
               <div style={{ display:'flex', alignItems:'center', marginBottom: 6 }}>
                 <span className="eyebrow">Silence after points</span>
@@ -445,7 +467,7 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
           </CoachBlock>
 
           {/* Team dynamics coach — group health */}
-          <CoachBlock name="Team dynamics coach" scope="watching the group">
+          {!solo && <CoachBlock name="Team dynamics coach" scope="watching the group">
             <div>
               <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
                 <span className="eyebrow">Who's talking over whom</span>
@@ -474,16 +496,16 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
               hint={`${sim.participants.length} participants`}
               color={sim.metrics.engagement > 0.6 ? 'var(--green)' : 'var(--ink-0)'}
             />
-          </CoachBlock>
+          </CoachBlock>}
 
           {/* Tone coach — room temperature + alignment */}
-          <CoachBlock name="Tone coach" scope="watching the room">
-            <div>
+          <CoachBlock name="Tone coach" scope={solo ? 'watching your delivery' : 'watching the room'}>
+            {!solo && <div>
               <div className="eyebrow" style={{ marginBottom: 6 }}>Room temperature</div>
               <SentimentGauge value={sim.metrics.sentiment}/>
-            </div>
+            </div>}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <div style={{
+              {!solo && <div style={{
                 padding: '10px 11px', background: 'var(--bg-2)',
                 border: '1px solid var(--line-soft)', borderRadius: 8,
               }}>
@@ -500,28 +522,50 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
                 <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 5 }}>
                   {sim.metrics.lsm < 0.55 ? 'misaligned' : sim.metrics.lsm > 0.75 ? 'in sync' : 'matching'}
                 </div>
-              </div>
-              <MetricTile
-                label="Pace"
-                value={Math.round(142 + sim.metrics.tension * 26)}
-                suffix="wpm"
-                hint="baseline 142"
-                color={sim.metrics.tension > 0.5 ? 'var(--amber)' : 'var(--ink-0)'}
-              />
+              </div>}
+              {solo ? (() => {
+                // Live mic: measured from your recognized words and timestamps,
+                // once there's enough speech for the number to mean something.
+                const tr = sim.transcript;
+                const enough = tr.length >= 2 && tr[tr.length - 1].t - tr[0].t >= 15;
+                const wpm = enough ? Math.round(MeetingData.micWpm(tr)) : null;
+                return (
+                  <MetricTile label="Pace" value={wpm ?? '—'} suffix="wpm"
+                    hint={enough ? 'conversational 130–160' : 'measuring…'}
+                    color={wpm > 175 ? 'var(--amber)' : 'var(--ink-0)'}/>
+                );
+              })() : (
+                <MetricTile
+                  label="Pace"
+                  value={Math.round(142 + sim.metrics.tension * 26)}
+                  suffix="wpm"
+                  hint="baseline 142"
+                  color={sim.metrics.tension > 0.5 ? 'var(--amber)' : 'var(--ink-0)'}
+                />
+              )}
             </div>
           </CoachBlock>
 
-          {/* Outcomes coach — meeting arc */}
+          {/* Outcomes coach — meeting arc. Solo practice tracks only the
+              prompt's time budget (and shows nothing for free practice). */}
+          {(!solo || sim.scenario.prompt?.targetSec) && (
           <CoachBlock name="Outcomes coach" scope="watching the arc">
             <div>
-              <div className="eyebrow" style={{ marginBottom: 8 }}>Meeting goals</div>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>{solo ? 'Practice goal' : 'Meeting goals'}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <GoalRow label="Speak less than 50%" current={sim.metrics.yourTalkPct} target={50} invert/>
-                <GoalRow label="Ask ≥ 3 questions" current={sim.metrics.questionCount} target={3}/>
-                <GoalRow label="Acknowledge objections" current={sim.metrics.acknowledged} target={sim.metrics.objections}/>
+                {solo ? (
+                  <TimeGoalRow elapsed={Math.floor(sim.t)} target={sim.scenario.prompt.targetSec}/>
+                ) : (
+                  <>
+                    <GoalRow label="Speak less than 50%" current={sim.metrics.yourTalkPct} target={50} invert/>
+                    <GoalRow label="Ask ≥ 3 questions" current={sim.metrics.questionCount} target={3}/>
+                    <GoalRow label="Acknowledge objections" current={sim.metrics.acknowledged} target={sim.metrics.objections}/>
+                  </>
+                )}
               </div>
             </div>
           </CoachBlock>
+          )}
 
           {/* Head coach — graceful degradation */}
           {sim.metrics.audioQuality < 0.6 && (
@@ -558,6 +602,22 @@ function GoalRow({ label, current, target, invert = false }) {
         </span>
       </div>
       <Meter value={ratio * 100} color={done ? 'var(--green)' : 'var(--blue)'} height={3}/>
+    </div>
+  );
+}
+
+// Practice time budget: fills toward the target, turns amber once you run over.
+function TimeGoalRow({ elapsed, target }) {
+  const over = elapsed > target;
+  return (
+    <div data-testid="time-goal">
+      <div style={{ display: 'flex', fontSize: 11.5, marginBottom: 3 }}>
+        <span style={{ flex: 1, color: 'var(--ink-1)' }}>Make your point within {target}s</span>
+        <span className="mono" style={{ color: over ? 'var(--amber)' : 'var(--ink-2)' }}>
+          {elapsed}s / {target}s
+        </span>
+      </div>
+      <Meter value={Math.min(100, (elapsed / target) * 100)} color={over ? 'var(--amber)' : 'var(--blue)'} height={3}/>
     </div>
   );
 }

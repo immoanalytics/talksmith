@@ -698,6 +698,7 @@ const SCENARIOS = {
     id: 'q2_roadmap',
     name: 'Q2 roadmap sync',
     summary: 'Pushback on a quarter; recovery after concessions',
+    daysAgo: 41,   // when it happened — drives the Profile time ranges
     duration: 175,
     startAt: 48,
     pplCount: 4,
@@ -713,6 +714,7 @@ const SCENARIOS = {
     id: 'tense_1on1',
     name: 'Skip-level feedback',
     summary: 'Hard feedback delivered in person; tone coach is busy',
+    daysAgo: 12,
     duration: 180,
     startAt: 0,
     pplCount: 2,
@@ -784,6 +786,7 @@ const SCENARIOS = {
     id: 'clear_decision',
     name: 'Eng standup decision',
     summary: 'Crisp decision; coach is mostly silent (empty-state demo)',
+    daysAgo: 3,
     duration: 100,
     startAt: 0,
     pplCount: 4,
@@ -827,11 +830,13 @@ function fmtTime(s) {
 // on boundary indices so they only recompute when something actually changed —
 // not on every 100ms tick. This keeps each tick at near-zero CPU outside of
 // transcript/nudge transitions.
-function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', scenarioId = 'q2_roadmap' }) {
-  // Resolve the scenario once per render. The inner names shadow the
-  // module-level defaults so the existing references inside this hook
-  // (SCRIPT, NUDGE_SCRIPT, PARTICIPANTS) keep working without rewrite.
-  const scenario = SCENARIOS[scenarioId] || SCENARIOS.q2_roadmap;
+function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', scenarioId = 'q2_roadmap', scenario: override }) {
+  // Resolve the scenario once per render. `override` supplies a scenario that
+  // isn't in the library (the live mic session, which grows as you speak).
+  // The inner names shadow the module-level defaults so the existing
+  // references inside this hook (SCRIPT, NUDGE_SCRIPT, PARTICIPANTS) keep
+  // working without rewrite.
+  const scenario = override || SCENARIOS[scenarioId] || SCENARIOS.q2_roadmap;
   const SCRIPT = scenario.script;
   const NUDGE_SCRIPT = scenario.nudges;
   const PARTICIPANTS = scenario.participants;
@@ -863,7 +868,7 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
     const id = setInterval(() => {
       setT(prev => {
         const next = prev + 0.1 * speed;
-        if (next > totalDuration) {
+        if (next > totalDuration && !scenario.openEnded) {
           // Meeting looped — let suppressed cues come back so a re-watch isn't muted.
           setSuppressed(new Map());
           return 0;
@@ -872,18 +877,18 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
       });
     }, 100);
     return () => clearInterval(id);
-  }, [running, speed, totalDuration]);
+  }, [running, speed, totalDuration, scenario.openEnded]);
 
-  // Transcript: stable until we cross a script line boundary OR the user
-  // swaps scenarios (which changes SCRIPT under our feet).
+  // Transcript: stable until we cross a script line boundary OR the scenario
+  // object changes (a different scenario, or new mic lines arriving).
   const transcriptCount = React.useMemo(() => {
     let i = 0;
     while (i < SCRIPT.length && SCRIPT[i].t <= t) i++;
     return i;
-  }, [t, scenarioId]);
+  }, [t, scenario]);
   const transcript = React.useMemo(
     () => SCRIPT.slice(0, transcriptCount),
-    [transcriptCount, scenarioId] // eslint-disable-line react-hooks/exhaustive-deps
+    [transcriptCount, scenario] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Candidate cues: window membership only changes at nudge t / t+duration
@@ -893,7 +898,7 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
       .filter(n => t >= n.t && t <= n.t + n.duration)
       .map(n => n.id)
       .join(','),
-    [t, scenarioId]
+    [t, scenario]
   );
   const candidates = React.useMemo(
     () => NUDGE_SCRIPT.filter(n => {
@@ -904,7 +909,7 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
       if (s.mode === 'snooze') return s.until <= t;
       return true;
     }),
-    [candidateIds, suppressed, t, scenarioId] // eslint-disable-line react-hooks/exhaustive-deps
+    [candidateIds, suppressed, t, scenario] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Head coach: hard cap of 2 simultaneous cues. Priority blends urgency tier
@@ -941,11 +946,11 @@ function useMeetingSim({ running, speed = 1, startAt, activeGoal = 'listen', sce
   // scenario itself changes (different nudge set).
   const historyCount = React.useMemo(
     () => NUDGE_SCRIPT.filter(n => t >= n.t).length,
-    [t, scenarioId]
+    [t, scenario]
   );
   const nudgeHistory = React.useMemo(
     () => NUDGE_SCRIPT.filter(n => t >= n.t).slice().reverse(),
-    [historyCount, scenarioId] // eslint-disable-line react-hooks/exhaustive-deps
+    [historyCount, scenario] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Metrics: split heavy work. The text analysis only re-runs when the
@@ -1253,6 +1258,10 @@ function analyzeTranscript(script, participants, meId = 'you') {
   };
 }
 
+// Composite weights for the overall score. Exported so "Explain model"
+// shows the numbers actually used.
+const OVERALL_WEIGHTS = { balance: 0.18, clarity: 0.27, influence: 0.27, listening: 0.28 };
+
 // Turn an analysis into the four user-facing scores plus a composite grade.
 // Each score carries the concrete signals that produced it (explainability).
 function scoreFromAnalysis(a) {
@@ -1281,8 +1290,9 @@ function scoreFromAnalysis(a) {
 
   // Composite: balance (from talk ratio) + the three skill scores.
   const balance = clamp(100 - Math.max(0, a.talkPct - 50) * 2);
-  const overall = round(0.18 * balance + 0.27 * clarity + 0.27 * influence + 0.28 * listening);
-  const grade = overall >= 85 ? 'A' : overall >= 75 ? 'B' : overall >= 65 ? 'C' : overall >= 55 ? 'D' : 'E';
+  const W = OVERALL_WEIGHTS;
+  const overall = round(W.balance * balance + W.clarity * clarity + W.influence * influence + W.listening * listening);
+  const grade = gradeFor(overall);
 
   const pct = (x) => `${Math.round(x * 100)}%`;
   return {
@@ -1331,13 +1341,211 @@ function nudgeImpact(n) {
   return { critical: 1, suggest: 0.65, insight: 0.5 }[n.type] ?? 0.5;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Live mic practice — your own speech instead of a scripted meeting.
+//
+// The browser's speech recognition produces final lines ({ t, s: 'you', txt });
+// micScenario() wraps them in a normal scenario object, so the live
+// dashboard, Review, scoring and Export all work unchanged. Coaching cues are
+// derived from the words by deriveCoaching(), not scripted.
+// ─────────────────────────────────────────────────────────────────────────
+
+const MIC_SCENARIO_ID = 'mic';
+const MIC_PARTICIPANTS = [
+  { id: 'you', name: 'You', color: 'oklch(0.72 0.14 250)', initials: 'YA', role: 'Speaker' },
+];
+
+// Each rule fires at most once, on the first line where it becomes true, so a
+// cue's id and timing are stable as the transcript grows.
+const MIC_RULES = [
+  { id: 'mic-fillers', coach: 'clarity', type: 'suggest', tone: 'amber', timeline: 'Filler words',
+    when: (a) => a.yourWords >= 40 && a.fillerRate > 3,
+    make: (a) => ({
+      title: 'Filler words creeping in',
+      detail: `${a.fillers} fillers so far (${a.fillerRate.toFixed(1)} per 100 words).`,
+      signals: [`${a.fillers} fillers`, `${a.fillerRate.toFixed(1)}/100 words`],
+      why: 'A short silence reads as confidence; "um" and "like" read as uncertainty.',
+      action: { label: 'Try this', phrase: '"Pause for a beat instead of filling the gap."' },
+      confidence: 0.8,
+    }) },
+  { id: 'mic-hedges', coach: 'influence', type: 'suggest', tone: 'amber', timeline: 'Heavy hedging',
+    when: (a) => a.yourWords >= 40 && a.hedgeRate > 4,
+    make: (a) => ({
+      title: 'Lots of hedging',
+      detail: `${a.hedges} hedges ("maybe", "I think", "just"…) — your point sounds optional.`,
+      signals: [`${a.hedges} hedges`, `${a.hedgeRate.toFixed(1)}/100 words`],
+      why: 'Stating the recommendation plainly makes it easier for others to agree or push back.',
+      action: { label: 'Try this', phrase: '"I recommend we…" instead of "I think maybe we could…"' },
+      confidence: 0.75,
+    }) },
+  { id: 'mic-long-turns', coach: 'clarity', type: 'insight', tone: 'blue', timeline: 'Long sentences',
+    when: (a, lines) => lines.length >= 3 && a.avgTurnWords > 35,
+    make: (a) => ({
+      title: 'Land the point sooner',
+      detail: `Your sentences average ${Math.round(a.avgTurnWords)} words.`,
+      signals: [`Avg ${Math.round(a.avgTurnWords)} words/sentence`],
+      why: 'Shorter sentences are easier to follow when people are only listening.',
+      action: null,
+      confidence: 0.65,
+    }) },
+  { id: 'mic-pace', coach: 'tone', type: 'suggest', tone: 'amber', timeline: 'Speaking fast',
+    when: (a, lines) => micWpm(lines) > 175 && lines[lines.length - 1].t - lines[0].t >= 20,
+    make: (a, lines) => ({
+      title: "You're speaking fast",
+      detail: `About ${Math.round(micWpm(lines))} words per minute — conversational is 130–160.`,
+      signals: [`${Math.round(micWpm(lines))} wpm`],
+      why: 'Slowing down gives listeners time to absorb each point and signals calm.',
+      action: null,
+      confidence: 0.7,
+    }) },
+  { id: 'mic-question', coach: 'listening', type: 'insight', tone: 'green', positive: true, timeline: 'Invited input',
+    when: (a) => a.openQuestions > 0,
+    make: () => ({
+      title: 'Good — an open question',
+      detail: 'Open questions invite real input instead of yes/no answers.',
+      signals: ['Open question asked'],
+      why: 'Reinforcement — this is the habit that raises your listening score.',
+      action: null,
+      confidence: 0.85,
+    }) },
+  { id: 'mic-clean', coach: 'clarity', type: 'insight', tone: 'green', positive: true, timeline: 'Clean delivery',
+    when: (a) => a.yourWords >= 80 && a.fillerRate < 1 && a.hedgeRate < 2,
+    make: () => ({
+      title: 'Clean, direct delivery',
+      detail: 'Almost no fillers or hedges so far. Keep it up.',
+      signals: ['Fillers < 1/100 words', 'Few hedges'],
+      why: 'Reinforcement — clear, committed language is what makes points land.',
+      action: null,
+      confidence: 0.8,
+    }) },
+];
+
+// Words per minute across the session, from the recognized lines' timestamps.
+// The last line's own speaking time is estimated so short sessions aren't inflated.
+function micWpm(lines) {
+  if (!lines.length) return 0;
+  const words = lines.reduce((n, l) => n + wordCount(l.txt), 0);
+  const last = lines[lines.length - 1];
+  const secs = Math.max(5, last.t - lines[0].t + (wordCount(last.txt) / SPEAK_WPM) * 60);
+  return words / (secs / 60);
+}
+
+// Coaching cues + timeline moments for a transcript, derived from the words.
+function deriveCoaching(lines, participants = MIC_PARTICIPANTS) {
+  const nudges = [], timeline = [], fired = new Set();
+  for (let i = 0; i < lines.length; i++) {
+    const prefix = lines.slice(0, i + 1);
+    const a = analyzeTranscript(prefix, participants, 'you');
+    for (const r of MIC_RULES) {
+      if (fired.has(r.id) || !r.when(a, prefix)) continue;
+      fired.add(r.id);
+      const t = lines[i].t;
+      nudges.push({ id: r.id, t, coach: r.coach, type: r.type, tone: r.tone,
+        positive: !!r.positive, duration: 15, ...r.make(a, prefix) });
+      timeline.push({ t, type: r.id.replace('mic-', ''), label: r.timeline, tone: r.tone });
+    }
+  }
+  return { nudges, timeline };
+}
+
+// A scenario object for a live mic session so far.
+function micScenario(lines, promptId = 'free') {
+  const last = lines[lines.length - 1];
+  const prompt = practicePrompt(promptId);
+  return {
+    id: MIC_SCENARIO_ID,
+    name: 'Live mic practice',
+    summary: prompt.id === 'free' ? 'Your own speech, transcribed by your browser' : prompt.title,
+    prompt,
+    daysAgo: 0,
+    openEnded: true, // the clock runs as long as you talk; it never loops
+    duration: Math.max(60, last ? Math.ceil(last.t + 15) : 0),
+    startAt: 0,
+    pplCount: 1,
+    participants: MIC_PARTICIPANTS,
+    script: lines,
+    ...deriveCoaching(lines),
+  };
+}
+
+// Practice prompts for solo mic sessions. `targetSec` is the time goal the
+// Outcomes coach tracks (null = open-ended).
+const PRACTICE_PROMPTS = [
+  { id: 'free', title: 'Free practice', text: 'Talk through whatever is on your mind — a plan, an update, a pitch.', targetSec: null },
+  { id: 'pitch', title: 'Pitch your top priority', text: 'Make the case for your single most important priority this quarter. Lead with the recommendation.', targetSec: 60 },
+  { id: 'pushback', title: 'Push back on a deadline', text: 'A stakeholder wants it two weeks early. Say no — kindly, clearly, with an alternative.', targetSec: 90 },
+  { id: 'feedback', title: 'Give tough feedback', text: 'Tell a strong teammate that how they ran the last project hurt the team. Be specific and kind.', targetSec: 120 },
+  { id: 'decision', title: 'Summarize a decision', text: 'Close a meeting: state what was decided, who owns what, and by when.', targetSec: 45 },
+];
+function practicePrompt(id) {
+  return PRACTICE_PROMPTS.find(p => p.id === id) || PRACTICE_PROMPTS[0];
+}
+
+// Headline numbers for one practice session (Profile's practice panel).
+function sessionStats(lines) {
+  const a = analyzeTranscript(lines, MIC_PARTICIPANTS, 'you');
+  const s = scoreFromAnalysis(a);
+  const last = lines[lines.length - 1];
+  return {
+    words: a.yourWords,
+    durationSec: last ? Math.round(last.t - lines[0].t + (wordCount(last.txt) / SPEAK_WPM) * 60) : 0,
+    clarity: s.clarity,
+    fillerRate: +a.fillerRate.toFixed(1),
+    hedgeRate: +a.hedgeRate.toFixed(1),
+    wpm: Math.round(micWpm(lines)),
+  };
+}
+
+// Saved practice sessions live only in this browser (localStorage), newest
+// first, capped so storage can't grow without bound.
+const SESSIONS_KEY = 'talksmith.sessions';
+const MAX_SESSIONS = 50;
+function loadSessions() {
+  try {
+    const v = JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]');
+    return Array.isArray(v)
+      ? v.filter(x => x && typeof x.id === 'string' && Array.isArray(x.lines) && x.lines.length)
+      : [];
+  } catch { return []; }
+}
+function writeSessions(list) {
+  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(list.slice(0, MAX_SESSIONS))); return true; }
+  catch { return false; }
+}
+function saveSession(lines, promptId = 'free', now = new Date()) {
+  if (!lines.length) return null;
+  const session = {
+    id: `s-${now.getTime()}`,
+    savedAt: now.toISOString(),
+    promptId: practicePrompt(promptId).id,
+    lines: lines.map(l => ({ t: l.t, s: 'you', txt: l.txt })),
+  };
+  return writeSessions([session, ...loadSessions()]) ? session : null;
+}
+function deleteSession(id) {
+  writeSessions(loadSessions().filter(x => x.id !== id));
+}
+
+// Letter grade for a 0–100 composite.
+function gradeFor(overall) {
+  return overall >= 85 ? 'A' : overall >= 75 ? 'B' : overall >= 65 ? 'C' : overall >= 55 ? 'D' : 'E';
+}
+
+// Profile time ranges, in days (null = all time).
+const PROFILE_RANGES = { '7d': 7, '30d': 30, '90d': 90, 'All': null };
+
 // Personal learning model — aggregates the user's recent meetings (the
 // scenario library, treated as meeting history) into the numbers the Profile
 // screen shows. Derived from the same scoring engine, so Profile agrees with
-// Live and Review instead of inventing its own figures.
-function profileModel() {
-  const scored = Object.values(SCENARIOS).map(s => ({ scenario: s, ...scoreScenario(s) }));
-  const n = scored.length || 1;
+// Live and Review instead of inventing its own figures. `rangeDays` limits it
+// to meetings from the last N days; `n` is 0 when none fall in the range.
+function profileModel({ rangeDays = null } = {}) {
+  const scored = Object.values(SCENARIOS)
+    .filter(s => rangeDays == null || (s.daysAgo ?? 0) <= rangeDays)
+    .map(s => ({ scenario: s, ...scoreScenario(s) }))
+    .sort((a, b) => (b.scenario.daysAgo ?? 0) - (a.scenario.daysAgo ?? 0)); // oldest first
+  const count = scored.length;
+  const n = count || 1;
   const avg = (sel) => scored.reduce((a, x) => a + sel(x), 0) / n;
 
   const avgTalk = Math.round(avg(x => x.talkRatio));
@@ -1346,7 +1554,7 @@ function profileModel() {
   const avgInfluence = Math.round(avg(x => x.influence));
   const avgEngagement = Math.round(avg(x => x.engagement));
   const avgOverall = Math.round(avg(x => x.overall));
-  const overallGrade = avgOverall >= 85 ? 'A' : avgOverall >= 75 ? 'B' : avgOverall >= 65 ? 'C' : avgOverall >= 55 ? 'D' : 'E';
+  const overallGrade = gradeFor(avgOverall);
 
   const totalInterruptions = scored.reduce((a, x) => a + x.analysis.youInterruptedOthers, 0);
   const interruptionsPerMtg = +(totalInterruptions / n).toFixed(1);
@@ -1359,7 +1567,7 @@ function profileModel() {
   ].sort((a, b) => b.v - a.v);
   const strongest = skills[0], weakest = skills[skills.length - 1];
 
-  const byInterrupt = scored.slice().sort((a, b) => b.analysis.youInterruptedOthers - a.analysis.youInterruptedOthers)[0];
+  const byInterrupt = scored.slice().sort((a, b) => b.analysis.youInterruptedOthers - a.analysis.youInterruptedOthers)[0] || null;
 
   // Sign of the turn-length ↔ clarity relationship across meetings, so the
   // "what the model learned" note is actually backed by the data on screen.
@@ -1376,11 +1584,18 @@ function profileModel() {
     balance: Math.round(clamp(100 - Math.max(0, avgTalk - 50) * 2)),
   };
 
+  // One point per meeting, oldest → newest, for the Profile trend charts.
+  const series = scored.map(x => ({
+    id: x.scenario.id, name: x.scenario.name, daysAgo: x.scenario.daysAgo ?? 0,
+    talk: x.talkRatio, listening: x.listening,
+    interruptions: x.analysis.youInterruptedOthers,
+  }));
+
   return {
-    n, avgTalk, avgClarity, avgListening, avgInfluence, avgEngagement,
+    n: count, avgTalk, avgClarity, avgListening, avgInfluence, avgEngagement,
     avgOverall, overallGrade, totalInterruptions, interruptionsPerMtg,
     avgFillerRate, strongest, weakest, byInterrupt, shorterTurnsClearer,
-    goalProgress, scored,
+    goalProgress, scored, series,
   };
 }
 
@@ -1418,6 +1633,9 @@ window.MeetingData = {
   COACHES, GOAL_COACH_WEIGHTS, SCENARIOS,
   fmtTime, useMeetingSim, deriveMetrics, moodAt,
   analyzeTranscript, scoreFromAnalysis, scoreScenario, nudgeImpact, profileModel,
+  PROFILE_RANGES, gradeFor, OVERALL_WEIGHTS,
+  MIC_SCENARIO_ID, micScenario, deriveCoaching, micWpm,
+  PRACTICE_PROMPTS, practicePrompt, sessionStats, loadSessions, saveSession, deleteSession,
   buildReviewNotes,
 };
 
@@ -1669,11 +1887,11 @@ window.Nudge = Nudge;
 // === components/LiveDashboard.jsx ===
 // LiveDashboard.jsx — the main screen
 
-function Transcript({ transcript, participants, t }) {
+function Transcript({ transcript, participants, t, interim = '', prompt = null }) {
   const scrollRef = React.useRef();
   React.useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [transcript.length]);
+  }, [transcript.length, interim]);
 
   const p = (id) => participants.find(x => x.id === id);
   const last = transcript[transcript.length - 1];
@@ -1728,11 +1946,29 @@ function Transcript({ transcript, participants, t }) {
           </div>
         );
       })}
-      {transcript.length === 0 && (
+      {interim && (
+        <div data-testid="interim-transcript" style={{
+          marginTop: 2, paddingLeft: 25, fontSize: 13, lineHeight: 1.55,
+          color: 'var(--ink-3)', fontStyle: 'italic',
+        }}>
+          {interim}<TypingCaret />
+        </div>
+      )}
+      {transcript.length === 0 && !interim && (prompt ? (
+        <div data-testid="practice-prompt-card" style={{
+          margin: '12px 0', padding: 14, borderRadius: 8,
+          background: 'var(--bg-inset)', border: '1px solid var(--line-soft)',
+        }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>
+            {prompt.title}{prompt.targetSec ? ` · aim for ${prompt.targetSec}s` : ''}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--ink-1)', lineHeight: 1.5 }}>{prompt.text}</div>
+        </div>
+      ) : (
         <div style={{ padding: 20, textAlign: 'center', color: 'var(--ink-3)', fontSize: 12 }}>
           Waiting for audio…
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -1971,8 +2207,11 @@ function HighAlertFrame({ active }) {
   );
 }
 
-function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant, speed, onSpeed }) {
+function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant, speed, onSpeed, interim = '' }) {
   const highAlert = sim.activeNudges.some(n => n.tone === 'rose');
+  // Solo practice (live mic) has no one to share the floor with, so the
+  // group-balance readouts would only ever say "100% you".
+  const solo = sim.participants.length < 2;
 
   return (
     <div style={{
@@ -2002,7 +2241,8 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
           </div>
         }
       >
-        <Transcript transcript={sim.transcript} participants={sim.participants} t={sim.t}/>
+        <Transcript transcript={sim.transcript} participants={sim.participants} t={sim.t} interim={interim}
+          prompt={sim.scenario.prompt || null}/>
       </Panel>
 
       {/* CENTER — Guidance, from the head coach */}
@@ -2015,13 +2255,13 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
             <IconButton tip={running ? 'Pause (Space)' : 'Resume (Space)'} onClick={onToggleRun}>
               {running ? I('pause', { size: 12 }) : I('play', { size: 12 })}
             </IconButton>
-            <button onClick={() => onSpeed(speed === 1 ? 2 : speed === 2 ? 4 : 1)}
+            {!solo && <button onClick={() => onSpeed(speed === 1 ? 2 : speed === 2 ? 4 : 1)}
               className="mono"
               style={{
                 border: '1px solid var(--line)', background: 'var(--bg-inset)',
                 color: 'var(--ink-1)', fontSize: 10.5, padding: '3px 6px',
                 borderRadius: 5, cursor: 'pointer', minWidth: 28,
-              }}>{speed}×</button>
+              }}>{speed}×</button>}
             <IconButton tip="Mute coaching (⌘M)" onClick={onToggleMute} active={muted} danger={muted}>
               {muted ? I('bellOff', { size: 12 }) : I('bell', { size: 12 })}
             </IconButton>
@@ -2055,7 +2295,7 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
         <div className="scroll" style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 18, minHeight: 0 }}>
           {/* Listening coach — your talk/silence balance */}
           <CoachBlock name="Listening coach" scope="watching you">
-            <div>
+            {!solo && <div>
               <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
                 <span className="eyebrow">Speaking time</span>
                 <div style={{ flex: 1 }}/>
@@ -2064,7 +2304,7 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
                 )}
               </div>
               <TalkRatioBar participants={sim.metrics.talkRatio}/>
-            </div>
+            </div>}
             <div>
               <div style={{ display:'flex', alignItems:'center', marginBottom: 6 }}>
                 <span className="eyebrow">Silence after points</span>
@@ -2114,7 +2354,7 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
           </CoachBlock>
 
           {/* Team dynamics coach — group health */}
-          <CoachBlock name="Team dynamics coach" scope="watching the group">
+          {!solo && <CoachBlock name="Team dynamics coach" scope="watching the group">
             <div>
               <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
                 <span className="eyebrow">Who's talking over whom</span>
@@ -2143,16 +2383,16 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
               hint={`${sim.participants.length} participants`}
               color={sim.metrics.engagement > 0.6 ? 'var(--green)' : 'var(--ink-0)'}
             />
-          </CoachBlock>
+          </CoachBlock>}
 
           {/* Tone coach — room temperature + alignment */}
-          <CoachBlock name="Tone coach" scope="watching the room">
-            <div>
+          <CoachBlock name="Tone coach" scope={solo ? 'watching your delivery' : 'watching the room'}>
+            {!solo && <div>
               <div className="eyebrow" style={{ marginBottom: 6 }}>Room temperature</div>
               <SentimentGauge value={sim.metrics.sentiment}/>
-            </div>
+            </div>}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <div style={{
+              {!solo && <div style={{
                 padding: '10px 11px', background: 'var(--bg-2)',
                 border: '1px solid var(--line-soft)', borderRadius: 8,
               }}>
@@ -2169,28 +2409,50 @@ function LiveDashboard({ sim, running, onToggleRun, muted, onToggleMute, variant
                 <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 5 }}>
                   {sim.metrics.lsm < 0.55 ? 'misaligned' : sim.metrics.lsm > 0.75 ? 'in sync' : 'matching'}
                 </div>
-              </div>
-              <MetricTile
-                label="Pace"
-                value={Math.round(142 + sim.metrics.tension * 26)}
-                suffix="wpm"
-                hint="baseline 142"
-                color={sim.metrics.tension > 0.5 ? 'var(--amber)' : 'var(--ink-0)'}
-              />
+              </div>}
+              {solo ? (() => {
+                // Live mic: measured from your recognized words and timestamps,
+                // once there's enough speech for the number to mean something.
+                const tr = sim.transcript;
+                const enough = tr.length >= 2 && tr[tr.length - 1].t - tr[0].t >= 15;
+                const wpm = enough ? Math.round(MeetingData.micWpm(tr)) : null;
+                return (
+                  <MetricTile label="Pace" value={wpm ?? '—'} suffix="wpm"
+                    hint={enough ? 'conversational 130–160' : 'measuring…'}
+                    color={wpm > 175 ? 'var(--amber)' : 'var(--ink-0)'}/>
+                );
+              })() : (
+                <MetricTile
+                  label="Pace"
+                  value={Math.round(142 + sim.metrics.tension * 26)}
+                  suffix="wpm"
+                  hint="baseline 142"
+                  color={sim.metrics.tension > 0.5 ? 'var(--amber)' : 'var(--ink-0)'}
+                />
+              )}
             </div>
           </CoachBlock>
 
-          {/* Outcomes coach — meeting arc */}
+          {/* Outcomes coach — meeting arc. Solo practice tracks only the
+              prompt's time budget (and shows nothing for free practice). */}
+          {(!solo || sim.scenario.prompt?.targetSec) && (
           <CoachBlock name="Outcomes coach" scope="watching the arc">
             <div>
-              <div className="eyebrow" style={{ marginBottom: 8 }}>Meeting goals</div>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>{solo ? 'Practice goal' : 'Meeting goals'}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <GoalRow label="Speak less than 50%" current={sim.metrics.yourTalkPct} target={50} invert/>
-                <GoalRow label="Ask ≥ 3 questions" current={sim.metrics.questionCount} target={3}/>
-                <GoalRow label="Acknowledge objections" current={sim.metrics.acknowledged} target={sim.metrics.objections}/>
+                {solo ? (
+                  <TimeGoalRow elapsed={Math.floor(sim.t)} target={sim.scenario.prompt.targetSec}/>
+                ) : (
+                  <>
+                    <GoalRow label="Speak less than 50%" current={sim.metrics.yourTalkPct} target={50} invert/>
+                    <GoalRow label="Ask ≥ 3 questions" current={sim.metrics.questionCount} target={3}/>
+                    <GoalRow label="Acknowledge objections" current={sim.metrics.acknowledged} target={sim.metrics.objections}/>
+                  </>
+                )}
               </div>
             </div>
           </CoachBlock>
+          )}
 
           {/* Head coach — graceful degradation */}
           {sim.metrics.audioQuality < 0.6 && (
@@ -2227,6 +2489,22 @@ function GoalRow({ label, current, target, invert = false }) {
         </span>
       </div>
       <Meter value={ratio * 100} color={done ? 'var(--green)' : 'var(--blue)'} height={3}/>
+    </div>
+  );
+}
+
+// Practice time budget: fills toward the target, turns amber once you run over.
+function TimeGoalRow({ elapsed, target }) {
+  const over = elapsed > target;
+  return (
+    <div data-testid="time-goal">
+      <div style={{ display: 'flex', fontSize: 11.5, marginBottom: 3 }}>
+        <span style={{ flex: 1, color: 'var(--ink-1)' }}>Make your point within {target}s</span>
+        <span className="mono" style={{ color: over ? 'var(--amber)' : 'var(--ink-2)' }}>
+          {elapsed}s / {target}s
+        </span>
+      </div>
+      <Meter value={Math.min(100, (elapsed / target) * 100)} color={over ? 'var(--amber)' : 'var(--blue)'} height={3}/>
     </div>
   );
 }
@@ -2919,20 +3197,49 @@ window.Review = Review;
 
 // === components/Profile.jsx ===
 // Profile.jsx — Personal profile & learning model
-function Profile({ activeGoal, setActiveGoal }) {
+
+const GOALS = [
+  { id: 'listen',    icon: 'users',   label: 'Improve listening',  desc: 'Acknowledge objections, reduce interruptions' },
+  { id: 'assertive', icon: 'flag',    label: 'Be more assertive',  desc: 'Make your recommendation clear upfront' },
+  { id: 'clarity',   icon: 'sparkle', label: 'Improve clarity',    desc: 'Fewer filler words, shorter sentences' },
+  { id: 'balance',   icon: 'pulse',   label: 'Balance talk time',  desc: 'Under 50% in most meetings' },
+];
+const DEFAULT_GOAL_TARGETS = { listen: 70, assertive: 70, clarity: 75, balance: 70 };
+
+// Saved per-goal targets, merged over the defaults and clamped to 0–100 so a
+// bad stored value can't break the progress maths.
+function loadGoalTargets() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('talksmith.goalTargets') || '{}');
+    const out = { ...DEFAULT_GOAL_TARGETS };
+    for (const k of Object.keys(out)) {
+      const v = Number(saved[k]);
+      if (Number.isFinite(v)) out[k] = Math.max(0, Math.min(100, Math.round(v)));
+    }
+    return out;
+  } catch { return { ...DEFAULT_GOAL_TARGETS }; }
+}
+
+const ago = (d) => d === 0 ? 'today' : `${d}d ago`;
+
+function Profile({ activeGoal, setActiveGoal, range, setRange, explainOpen, onCloseExplain }) {
   const goal = activeGoal;
   const setGoal = setActiveGoal;
-  const weights = MeetingData.GOAL_COACH_WEIGHTS[goal] || {};
 
   // Everything on this screen is derived from the scoring engine so it agrees
-  // with Live and Review. The headline numbers and each trend's latest point
-  // are real; the earlier history is a gentle ramp toward that real value.
-  const model = React.useMemo(() => MeetingData.profileModel(), []);
-  const ramp = (end, start, len = 12) =>
-    Array.from({ length: len }, (_, i) => +(start + (end - start) * (i / (len - 1))).toFixed(2));
+  // with Live and Review. Each trend point is one real meeting in the range.
+  const rangeDays = MeetingData.PROFILE_RANGES[range] ?? null;
+  const model = React.useMemo(() => MeetingData.profileModel({ rangeDays }), [rangeDays]);
+  const pick = (k) => model.series.map(p => p[k]);
+  const xLabels = model.series.length
+    ? [ago(model.series[0].daysAgo), ago(model.series[model.series.length - 1].daysAgo)]
+    : [];
 
-  // Per-goal progress + distance to target, both from real scores.
-  const goalTargets = { listen: 70, assertive: 70, clarity: 75, balance: 70 };
+  const [goalTargets, setGoalTargets] = React.useState(loadGoalTargets);
+  const [editingTargets, setEditingTargets] = React.useState(false);
+  React.useEffect(() => {
+    try { localStorage.setItem('talksmith.goalTargets', JSON.stringify(goalTargets)); } catch {}
+  }, [goalTargets]);
 
   return (
     <div data-testid="profile-screen" style={{
@@ -2963,7 +3270,7 @@ function Profile({ activeGoal, setActiveGoal }) {
               display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1,
               background: 'var(--line)', border: '1px solid var(--line)', borderRadius: 6, overflow: 'hidden',
             }}>
-              <MiniStat k="Meetings" v={String(model.n)} hint="analyzed"/>
+              <MiniStat k="Meetings" v={String(model.n)} hint={range === 'All' ? 'analyzed' : `in last ${range}`}/>
               <MiniStat k="Avg grade" v={model.overallGrade} hint={`${model.avgOverall}/100`}/>
               <MiniStat k="Talk avg" v={`${model.avgTalk}%`} hint="target ≤50"/>
             </div>
@@ -2971,66 +3278,82 @@ function Profile({ activeGoal, setActiveGoal }) {
         </Panel>
 
         <Panel eyebrow="Focus" title="Active goals" dense
-          right={<button style={btn()}>+ Add</button>}>
+          right={
+            <button data-testid="edit-targets" onClick={() => setEditingTargets(e => !e)}
+              aria-pressed={editingTargets} style={btn()}>
+              {editingTargets ? 'Done' : 'Edit targets'}
+            </button>
+          }>
           <div style={{ padding: '4px 8px 10px' }}>
-            <GoalChoice
-              id="listen" selected={goal === 'listen'} onSelect={setGoal}
-              icon="users" label="Improve listening"
-              desc="Acknowledge objections, reduce interruptions"
-              progress={model.goalProgress.listen}
-              delta={model.goalProgress.listen - goalTargets.listen}
-              negative={model.goalProgress.listen < goalTargets.listen}
-            />
-            <GoalChoice
-              id="assertive" selected={goal === 'assertive'} onSelect={setGoal}
-              icon="flag" label="Be more assertive"
-              desc="Make your recommendation clear upfront"
-              progress={model.goalProgress.assertive}
-              delta={model.goalProgress.assertive - goalTargets.assertive}
-              negative={model.goalProgress.assertive < goalTargets.assertive}
-            />
-            <GoalChoice
-              id="clarity" selected={goal === 'clarity'} onSelect={setGoal}
-              icon="sparkle" label="Improve clarity"
-              desc="Fewer filler words, shorter sentences"
-              progress={model.goalProgress.clarity}
-              delta={model.goalProgress.clarity - goalTargets.clarity}
-              negative={model.goalProgress.clarity < goalTargets.clarity}
-            />
-            <GoalChoice
-              id="balance" selected={goal === 'balance'} onSelect={setGoal}
-              icon="pulse" label="Balance talk time"
-              desc="Under 50% in most meetings"
-              progress={model.goalProgress.balance}
-              delta={model.goalProgress.balance - goalTargets.balance}
-              negative={model.goalProgress.balance < goalTargets.balance}
-            />
+            {editingTargets ? (
+              <div data-testid="targets-editor" style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '6px 4px' }}>
+                {GOALS.map(g => (
+                  <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
+                    <span style={{ flex: 1 }}>{g.label}</span>
+                    <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>target</span>
+                    <input type="number" min="0" max="100" step="5"
+                      data-testid={`target-${g.id}`}
+                      value={goalTargets[g.id]}
+                      onChange={(e) => {
+                        const v = Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0)));
+                        setGoalTargets(t => ({ ...t, [g.id]: v }));
+                      }}
+                      style={{
+                        width: 58, fontFamily: 'var(--font-mono)', fontSize: 12, padding: '4px 6px',
+                        background: 'var(--bg-inset)', color: 'var(--ink-0)',
+                        border: '1px solid var(--line)', borderRadius: 5,
+                      }}/>
+                  </label>
+                ))}
+                <button onClick={() => setGoalTargets({ ...DEFAULT_GOAL_TARGETS })}
+                  style={{ ...btn(), alignSelf: 'flex-start', marginTop: 4 }}>Reset to defaults</button>
+              </div>
+            ) : GOALS.map(g => {
+              const progress = model.goalProgress[g.id];
+              const delta = progress - goalTargets[g.id];
+              return (
+                <GoalChoice key={g.id}
+                  id={g.id} selected={goal === g.id} onSelect={setGoal}
+                  icon={g.icon} label={g.label} desc={g.desc}
+                  progress={progress} target={goalTargets[g.id]}
+                  delta={delta} negative={delta < 0}
+                />
+              );
+            })}
           </div>
         </Panel>
+
+        <PracticeSessions/>
       </div>
 
       {/* RIGHT — trends */}
       <Panel eyebrow="Learning model" title="Your evolution" dense
         right={
           <div style={{ display: 'flex', gap: 4, background: 'var(--bg-inset)', padding: 2, borderRadius: 6, border: '1px solid var(--line-soft)' }}>
-            {['7d', '30d', '90d', 'All'].map((r, i) => (
-              <button key={r} style={{
-                border: 'none', background: i === 2 ? 'var(--bg-2)' : 'transparent',
-                color: i === 2 ? 'var(--ink-0)' : 'var(--ink-2)',
+            {Object.keys(MeetingData.PROFILE_RANGES).map(r => (
+              <button key={r} data-testid={`range-${r}`} onClick={() => setRange(r)}
+                aria-pressed={range === r} style={{
+                border: 'none', background: range === r ? 'var(--bg-2)' : 'transparent',
+                color: range === r ? 'var(--ink-0)' : 'var(--ink-2)',
                 fontSize: 10.5, padding: '3px 8px', borderRadius: 4,
                 cursor: 'pointer', fontFamily: 'var(--font-mono)',
-                boxShadow: i === 2 ? 'var(--shadow-card)' : 'none',
+                boxShadow: range === r ? 'var(--shadow-card)' : 'none',
               }}>{r}</button>
             ))}
           </div>
         }>
         <div className="scroll" style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 14, minHeight: 0 }}>
+          {model.n === 0 ? (
+            <div data-testid="profile-empty" style={{ padding: 30, textAlign: 'center', color: 'var(--ink-2)', fontSize: 12.5 }}>
+              No meetings in the last {range}. Pick a longer range to see your trends.
+            </div>
+          ) : (<>
           <TrendChart
             title="Talk time balance"
-            subtitle="Your share of speaking time. Target ≤ 50%."
-            current={`${model.avgTalk}%`} delta={`${model.avgTalk <= 50 ? 'at' : 'above'} target`}
+            subtitle="Your share of speaking time, per meeting. Target ≤ 50%."
+            current={`${model.avgTalk}%`} delta={`avg · ${model.avgTalk <= 50 ? 'at' : 'above'} target`}
             tone={model.avgTalk <= 50 ? 'green' : 'amber'}
-            data={ramp(model.avgTalk, model.avgTalk + 18)}
+            data={pick('talk')} xLabels={xLabels}
             target={50}
             maxY={100}
             yLabel="%"
@@ -3040,17 +3363,17 @@ function Profile({ activeGoal, setActiveGoal }) {
             subtitle="Times you cut off another speaker. Target ≤ 1."
             current={String(model.interruptionsPerMtg)} delta={`${model.totalInterruptions} across ${model.n}`}
             tone={model.interruptionsPerMtg <= 1 ? 'green' : 'amber'}
-            data={ramp(model.interruptionsPerMtg, model.interruptionsPerMtg + 2)}
+            data={pick('interruptions')} xLabels={xLabels}
             target={1}
-            maxY={Math.max(4, Math.ceil(model.interruptionsPerMtg + 2))}
+            maxY={Math.max(4, ...pick('interruptions'))}
             yLabel="/mtg"
           />
           <TrendChart
             title="Listening score"
             subtitle="Acknowledgement, open questions, not dominating. Target ≥ 70."
-            current={String(model.avgListening)} delta={`${model.avgListening >= 70 ? 'on track' : 'growth area'}`}
+            current={String(model.avgListening)} delta={`avg · ${model.avgListening >= 70 ? 'on track' : 'growth area'}`}
             tone={model.avgListening >= 70 ? 'green' : 'amber'}
-            data={ramp(model.avgListening, Math.max(0, model.avgListening - 22))}
+            data={pick('listening')} xLabels={xLabels}
             target={70}
             maxY={100}
             yLabel=""
@@ -3061,8 +3384,8 @@ function Profile({ activeGoal, setActiveGoal }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
               <Insight tone="green"
                 title={`${model.strongest.key} is your strongest skill`}
-                detail={`Averaging ${model.strongest.v}/100 across your recent meetings — lean on it.`}
-                since={`based on ${model.n} meetings`}/>
+                detail={`Averaging ${model.strongest.v}/100 across these meetings — lean on it.`}
+                since={`based on ${model.n} meeting${model.n === 1 ? '' : 's'}`}/>
               <Insight tone="amber"
                 title={`${model.weakest.key} is your growth area`}
                 detail={`Lowest of your three skills at ${model.weakest.v}/100. Set it as a goal to turn up that coach.`}
@@ -3073,19 +3396,187 @@ function Profile({ activeGoal, setActiveGoal }) {
                   : 'You rarely talk over others'}
                 detail={model.byInterrupt.analysis.youInterruptedOthers > 0
                   ? `${model.byInterrupt.analysis.youInterruptedOthers} interruption(s) there vs. fewer elsewhere — watch the high-stakes rooms.`
-                  : 'No competitive interruptions detected across your recent meetings.'}
+                  : 'No competitive interruptions detected in these meetings.'}
                 since="interruption asymmetry"/>
               <Insight tone="blue"
-                title={model.shorterTurnsClearer ? 'Shorter turns track higher clarity' : 'Your clarity holds across turn lengths'}
-                detail={model.shorterTurnsClearer
+                title={model.n < 2 ? 'Turn-length pattern needs more data'
+                  : model.shorterTurnsClearer ? 'Shorter turns track higher clarity' : 'Your clarity holds across turn lengths'}
+                detail={model.n < 2 ? 'Needs at least two meetings in range to compare turn length with clarity.'
+                  : model.shorterTurnsClearer
                   ? 'Across your meetings, tighter turns correlate with cleaner delivery. Land the point sooner.'
                   : 'Clarity stays steady whether your turns run short or long.'}
                 since="correlational"/>
             </div>
           </div>
+          </>)}
         </div>
       </Panel>
+
+      {explainOpen && (
+        <ExplainModel model={model} range={range} activeGoal={goal} onClose={onCloseExplain}/>
+      )}
     </div>
+  );
+}
+
+// "Explain model" — how every number on this screen is produced, using the
+// engine's actual constants and this range's per-meeting scores.
+function ExplainModel({ model, range, activeGoal, onClose }) {
+  const closeRef = React.useRef();
+  React.useEffect(() => {
+    const prev = document.activeElement;
+    closeRef.current?.focus();
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('keydown', onKey); prev?.focus?.(); };
+  }, [onClose]);
+
+  const W = MeetingData.OVERALL_WEIGHTS;
+  const pct = (x) => `${Math.round(x * 100)}%`;
+  const weights = MeetingData.GOAL_COACH_WEIGHTS[activeGoal] || {};
+  const goalLabel = (GOALS.find(g => g.id === activeGoal) || {}).label || activeGoal;
+  const th = { textAlign: 'right', fontWeight: 500, color: 'var(--ink-2)', padding: '4px 6px', fontSize: 10.5 };
+  const td = { textAlign: 'right', padding: '5px 6px', fontFamily: 'var(--font-mono)', fontSize: 11.5 };
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, zIndex: 200, background: 'oklch(0.1 0.01 260 / 0.55)',
+      display: 'grid', placeItems: 'center', padding: 20,
+    }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="explain-title" data-testid="explain-model"
+        onClick={(e) => e.stopPropagation()} className="scroll" style={{
+          width: 'min(640px, 100%)', maxHeight: '85vh', overflowY: 'auto',
+          background: 'var(--bg-1)', border: '1px solid var(--line-strong)',
+          borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-pop)',
+          animation: 'fadeUp 200ms var(--ease) both',
+        }}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--line-soft)' }}>
+          <div id="explain-title" style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>How your scores are computed</div>
+          <button ref={closeRef} onClick={onClose} aria-label="Close" style={{
+            border: 'none', background: 'transparent', color: 'var(--ink-2)', cursor: 'pointer', padding: 4,
+          }}>{I('x', { size: 13 })}</button>
+        </div>
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16, fontSize: 12.5, lineHeight: 1.55 }}>
+          <div>
+            Every score is computed from the meeting transcript, not entered by hand. The same
+            engine drives Live, Review and this screen.
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4, color: 'var(--ink-1)' }}>
+            <li><b>Talk ratio</b> — your share of words spoken. Lower is better; target under 50%.</li>
+            <li><b>Clarity</b> — starts at 100, minus filler words, hedges and overly long turns.</li>
+            <li><b>Influence</b> — how often decisions land right after you speak and others build on your points; hedging lowers it.</li>
+            <li><b>Listening</b> — objections you acknowledge and open questions raise it; talking over 50%, interrupting and ignored objections lower it.</li>
+            <li><b>Overall</b> — {pct(W.balance)} talk balance, {pct(W.clarity)} clarity, {pct(W.influence)} influence,
+              {' '}{pct(W.listening)} listening. Grades: A ≥ 85, B ≥ 75, C ≥ 65, D ≥ 55.</li>
+          </ul>
+
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>Meetings in range ({range})</div>
+            {model.n === 0 ? (
+              <div style={{ color: 'var(--ink-2)' }}>No meetings in this range.</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--line-soft)' }}>
+                    <th style={{ ...th, textAlign: 'left' }}>Meeting</th>
+                    <th style={th}>When</th><th style={th}>Talk</th><th style={th}>Clarity</th>
+                    <th style={th}>Influence</th><th style={th}>Listening</th><th style={th}>Overall</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {model.scored.slice().reverse().map(x => (
+                    <tr key={x.scenario.id} style={{ borderBottom: '1px solid var(--line-soft)' }}>
+                      <td style={{ padding: '5px 6px', fontSize: 12 }}>{x.scenario.name}</td>
+                      <td style={{ ...td, color: 'var(--ink-2)' }}>{ago(x.scenario.daysAgo ?? 0)}</td>
+                      <td style={td}>{x.talkRatio}%</td><td style={td}>{x.clarity}</td>
+                      <td style={td}>{x.influence}</td><td style={td}>{x.listening}</td>
+                      <td style={td}>{x.overall} · {x.grade}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td style={{ padding: '5px 6px', fontSize: 12, fontWeight: 600 }}>Average</td><td/>
+                    <td style={td}>{model.avgTalk}%</td><td style={td}>{model.avgClarity}</td>
+                    <td style={td}>{model.avgInfluence}</td><td style={td}>{model.avgListening}</td>
+                    <td style={{ ...td, fontWeight: 600 }}>{model.avgOverall} · {model.overallGrade}</td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>Your goal tunes the coaches</div>
+            <div style={{ color: 'var(--ink-1)' }}>
+              Active goal <b>{goalLabel}</b>. During a meeting the head coach shows at most two cues at
+              a time, ranked by urgency, projected impact and confidence, then nudged by this goal:
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+              {Object.entries(weights).map(([coach, w]) => (
+                <Chip key={coach} tone={w > 0 ? 'green' : 'amber'} size="sm">
+                  {MeetingData.COACHES[coach]?.name || coach} {w > 0 ? '+' : ''}{w}
+                </Chip>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Saved live-mic practice sessions (this browser only), newest first, with
+// the numbers that matter for solo practice. Deleting is immediate.
+function PracticeSessions() {
+  const [sessions, setSessions] = React.useState(() => MeetingData.loadSessions());
+  const rows = React.useMemo(() => sessions.map(x => ({
+    ...x, prompt: MeetingData.practicePrompt(x.promptId), stats: MeetingData.sessionStats(x.lines),
+  })), [sessions]);
+  const remove = (id) => { MeetingData.deleteSession(id); setSessions(MeetingData.loadSessions()); };
+  const avgClarity = rows.length ? Math.round(rows.reduce((a, r) => a + r.stats.clarity, 0) / rows.length) : 0;
+  const fmtDate = (iso) => {
+    try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }
+    catch { return ''; }
+  };
+  const cell = { fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-1)', textAlign: 'right' };
+
+  return (
+    <Panel eyebrow="Practice" title="Mic sessions" dense style={{ minHeight: 0, flex: 1 }}
+      right={rows.length ? <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>avg clarity {avgClarity}</span> : null}>
+      <div data-testid="practice-sessions" className="scroll" style={{ overflowY: 'auto', padding: '6px 12px 10px', minHeight: 0 }}>
+        {rows.length === 0 ? (
+          <div style={{ fontSize: 11.5, color: 'var(--ink-2)', padding: '8px 2px', lineHeight: 1.5 }}>
+            No saved practice yet. In settings choose <b>Live mic (practice)</b>, speak, then press <b>Save session</b>.
+            Sessions stay in this browser.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto auto', columnGap: 10, rowGap: 6, alignItems: 'center' }}>
+            <span className="eyebrow">Session</span>
+            <span className="eyebrow" style={{ textAlign: 'right' }}>Time</span>
+            <span className="eyebrow" style={{ textAlign: 'right' }}>Clarity</span>
+            <span className="eyebrow" style={{ textAlign: 'right' }}>Fillers</span>
+            <span className="eyebrow" style={{ textAlign: 'right' }}>Pace</span>
+            <span/>
+            {rows.map(r => (
+              <React.Fragment key={r.id}>
+                <span data-testid="practice-session" style={{ fontSize: 12, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  title={r.lines.map(l => l.txt).join(' ')}>
+                  <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-3)', marginRight: 6 }}>{fmtDate(r.savedAt)}</span>
+                  {r.prompt.title}
+                </span>
+                <span style={cell}>{r.stats.durationSec}s</span>
+                <span style={{ ...cell, color: r.stats.clarity >= 75 ? 'var(--green)' : r.stats.clarity >= 60 ? 'var(--amber)' : 'var(--rose)' }}>{r.stats.clarity}</span>
+                <span style={cell}>{r.stats.fillerRate}/100w</span>
+                <span style={cell}>{r.stats.wpm}wpm</span>
+                <button onClick={() => remove(r.id)} aria-label={`Delete session from ${fmtDate(r.savedAt)}`} title="Delete"
+                  style={{ border: 'none', background: 'transparent', color: 'var(--ink-3)', cursor: 'pointer', padding: 2, display: 'grid', placeItems: 'center' }}>
+                  {I('x', { size: 11 })}
+                </button>
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+      </div>
+    </Panel>
   );
 }
 
@@ -3099,7 +3590,7 @@ function MiniStat({ k, v, hint }) {
   );
 }
 
-function GoalChoice({ id, selected, onSelect, icon, label, desc, progress, delta, negative }) {
+function GoalChoice({ id, selected, onSelect, icon, label, desc, progress, target, delta, negative }) {
   return (
     <button onClick={() => onSelect(id)} style={{
       width: '100%', textAlign: 'left', cursor: 'pointer',
@@ -3122,7 +3613,8 @@ function GoalChoice({ id, selected, onSelect, icon, label, desc, progress, delta
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 12.5, fontWeight: 600 }}>{label}</span>
           <div style={{ flex: 1 }}/>
-          <span className="mono" style={{ fontSize: 10.5, color: negative ? 'var(--rose)' : 'var(--green)' }}>
+          <span className="mono" title={`${progress} vs target ${target}`}
+            style={{ fontSize: 10.5, color: negative ? 'var(--rose)' : 'var(--green)' }}>
             {delta > 0 ? '+' : ''}{delta}
           </span>
         </div>
@@ -3133,19 +3625,20 @@ function GoalChoice({ id, selected, onSelect, icon, label, desc, progress, delta
   );
 }
 
-function TrendChart({ title, subtitle, current, delta, tone = 'blue', data, target, maxY, minY = 0, centerZero, yLabel }) {
+function TrendChart({ title, subtitle, current, delta, tone = 'blue', data, xLabels = [], target, maxY, minY = 0, centerZero, yLabel }) {
   const W = 560, H = 120, padL = 30, padR = 10, padT = 10, padB = 20;
   const chartW = W - padL - padR;
   const chartH = H - padT - padB;
 
   const y = v => padT + chartH - ((v - minY) / (maxY - minY)) * chartH;
-  const x = i => padL + (i / (data.length - 1)) * chartW;
+  // A single meeting sits mid-chart instead of dividing by zero.
+  const x = i => data.length < 2 ? padL + chartW / 2 : padL + (i / (data.length - 1)) * chartW;
 
   // Gradient ids feed url(#id), which can't contain spaces — a raw title
   // there made the fill invalid and the area rendered solid black.
   const gradId = `g-${tone}-${title.replace(/[^\w-]+/g, '-')}`;
   const pts = data.map((v, i) => `${x(i)},${y(v)}`).join(' ');
-  const areaPts = `${padL},${padT + chartH} ${pts} ${padL + chartW},${padT + chartH}`;
+  const areaPts = `${x(0)},${padT + chartH} ${pts} ${x(data.length - 1)},${padT + chartH}`;
 
   return (
     <div style={{
@@ -3168,7 +3661,7 @@ function TrendChart({ title, subtitle, current, delta, tone = 'blue', data, targ
           </div>
         </div>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 120, display: 'block' }}>
+      <svg data-testid="trend-chart" viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 120, display: 'block' }}>
         <defs>
           <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor={`var(--${tone})`} stopOpacity="0.25"/>
@@ -3203,13 +3696,19 @@ function TrendChart({ title, subtitle, current, delta, tone = 'blue', data, targ
         {/* line */}
         <polyline points={pts} fill="none" stroke={`var(--${tone})`} strokeWidth="1.75"
                   strokeLinecap="round" strokeLinejoin="round"/>
-        {/* last point */}
-        <circle cx={x(data.length - 1)} cy={y(data[data.length - 1])} r="3.5"
-                fill={`var(--${tone})`} stroke="var(--bg-2)" strokeWidth="2"/>
-        {/* x labels */}
-        <text x={padL} y={H - 5} fill="var(--ink-3)" fontSize="9" fontFamily="var(--font-mono)">Jan</text>
-        <text x={padL + chartW / 2} y={H - 5} fill="var(--ink-3)" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle">W25</text>
-        <text x={padL + chartW} y={H - 5} fill="var(--ink-3)" fontSize="9" fontFamily="var(--font-mono)" textAnchor="end">Apr</text>
+        {/* one point per meeting; the latest is emphasized */}
+        {data.map((v, i) => (
+          <circle key={i} cx={x(i)} cy={y(v)} r={i === data.length - 1 ? 3.5 : 2.5}
+                  fill={`var(--${tone})`} stroke="var(--bg-2)" strokeWidth="2"/>
+        ))}
+        {/* x labels: oldest → newest meeting in range */}
+        {xLabels.length > 0 && data.length > 1 && (
+          <text x={padL} y={H - 5} fill="var(--ink-3)" fontSize="9" fontFamily="var(--font-mono)">{xLabels[0]}</text>
+        )}
+        {xLabels.length > 0 && (
+          <text x={data.length > 1 ? padL + chartW : padL + chartW / 2} y={H - 5} fill="var(--ink-3)" fontSize="9"
+                fontFamily="var(--font-mono)" textAnchor={data.length > 1 ? 'end' : 'middle'}>{xLabels[xLabels.length - 1]}</text>
+        )}
         {/* y axis label */}
         <text x={padL - 6} y={padT + 4} fill="var(--ink-3)" fontSize="9" fontFamily="var(--font-mono)" textAnchor="end">{maxY}{yLabel}</text>
         <text x={padL - 6} y={padT + chartH} fill="var(--ink-3)" fontSize="9" fontFamily="var(--font-mono)" textAnchor="end">{minY}{yLabel}</text>
@@ -3300,6 +3799,80 @@ function pickInitialTheme() {
   return TWEAKS.theme;
 }
 
+// Live mic transcription via the browser's Web Speech API (Chrome, Edge,
+// Safari). Final results become transcript lines stamped with the meeting
+// clock (`getT`); `interim` is the words still being recognized. Chrome ends
+// recognition after a silence, so we restart it while the user wants it on.
+function useSpeechTranscript(getT) {
+  const Recognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+  const [lines, setLines] = React.useState([]);
+  const [interim, setInterim] = React.useState('');
+  // idle | listening | denied | unsupported | error
+  const [status, setStatus] = React.useState(Recognition ? 'idle' : 'unsupported');
+  const [error, setError] = React.useState('');
+  const recRef = React.useRef(null);
+  const wantRef = React.useRef(false);
+  const getTRef = React.useRef(getT);
+  getTRef.current = getT;
+
+  const stop = React.useCallback(() => {
+    wantRef.current = false;
+    const rec = recRef.current;
+    recRef.current = null;
+    if (rec) { try { rec.abort(); } catch {} }
+    setInterim('');
+    setStatus(s => (s === 'listening' ? 'idle' : s));
+  }, []);
+
+  const start = React.useCallback(() => {
+    if (!Recognition || recRef.current) return;
+    wantRef.current = true;
+    const rec = new Recognition();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = navigator.language || 'en-US';
+    rec.onresult = (e) => {
+      let pending = '';
+      const finals = [];
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        const txt = (r[0] && r[0].transcript || '').trim();
+        if (!txt) continue;
+        if (r.isFinal) finals.push(txt); else pending += (pending ? ' ' : '') + txt;
+      }
+      if (finals.length) {
+        const t = Math.round(getTRef.current() * 10) / 10;
+        setLines(prev => [...prev, ...finals.map(txt => ({
+          t, s: 'you', txt: txt.charAt(0).toUpperCase() + txt.slice(1),
+        }))]);
+      }
+      setInterim(pending);
+    };
+    rec.onerror = (e) => {
+      if (e.error === 'no-speech' || e.error === 'aborted') return; // benign; onend restarts
+      wantRef.current = false;
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') setStatus('denied');
+      else { setStatus('error'); setError(e.error || 'unknown error'); }
+    };
+    rec.onend = () => {
+      if (recRef.current !== rec) return;           // stopped or replaced
+      if (wantRef.current) { try { rec.start(); return; } catch {} }
+      recRef.current = null;
+      setInterim('');
+      setStatus(s => (s === 'listening' ? 'idle' : s));
+    };
+    recRef.current = rec;
+    setError('');
+    try { rec.start(); setStatus('listening'); }
+    catch (err) { recRef.current = null; wantRef.current = false; setStatus('error'); setError(String(err && err.message || err)); }
+  }, [Recognition]);
+
+  const clear = React.useCallback(() => { setLines([]); setInterim(''); }, []);
+  React.useEffect(() => stop, [stop]); // release the mic on unmount
+
+  return { lines, interim, status, error, start, stop, clear, listening: status === 'listening' };
+}
+
 function App() {
   const [theme, setTheme] = React.useState(pickInitialTheme);
   const [nudgeStyle, setNudgeStyle] = React.useState(() => loadPref('talksmith.nudgeStyle', TWEAKS.nudgeStyle, NUDGE_STYLES));
@@ -3313,10 +3886,15 @@ function App() {
   const [idle, setIdle] = React.useState(false);
   const [activeGoal, setActiveGoal] = React.useState(() =>
     loadPref('talksmith.goal', 'listen', Object.keys(MeetingData.GOAL_COACH_WEIGHTS)));
+  const [profileRange, setProfileRange] = React.useState(() =>
+    loadPref('talksmith.profileRange', 'All', Object.keys(MeetingData.PROFILE_RANGES)));
+  const [explainOpen, setExplainOpen] = React.useState(false);
+  const closeExplain = React.useCallback(() => setExplainOpen(false), []);
   const [scenarioId, setScenarioId] = React.useState(() => {
     const v = loadPref('talksmith.scenario', 'q2_roadmap');
-    return MeetingData.SCENARIOS[v] ? v : 'q2_roadmap';
+    return MeetingData.SCENARIOS[v] || v === MeetingData.MIC_SCENARIO_ID ? v : 'q2_roadmap';
   });
+  const micMode = scenarioId === MeetingData.MIC_SCENARIO_ID;
 
   React.useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
   React.useEffect(() => { try { localStorage.setItem('talksmith.theme', theme); } catch {} }, [theme]);
@@ -3325,15 +3903,42 @@ function App() {
   React.useEffect(() => { try { localStorage.setItem('talksmith.goal', activeGoal); } catch {} }, [activeGoal]);
   React.useEffect(() => { try { localStorage.setItem('talksmith.muted', muted ? '1' : '0'); } catch {} }, [muted]);
   React.useEffect(() => { try { localStorage.setItem('talksmith.scenario', scenarioId); } catch {} }, [scenarioId]);
+  React.useEffect(() => { try { localStorage.setItem('talksmith.profileRange', profileRange); } catch {} }, [profileRange]);
 
   // Pause the live sim when the user isn't on a screen that consumes it.
   // Profile/Review don't read sim state; ticking it is wasted work and the
   // timecode is misleading anyway when you're not "in" the meeting.
   const screenWantsSim = screen === 'live' || screen === 'overlay';
+  // Live mic: the clock runs exactly while the mic is listening, in real time,
+  // so line timestamps match when you spoke.
+  const tRef = React.useRef(0);
+  const mic = useSpeechTranscript(() => tRef.current);
+  const [promptId, setPromptId] = React.useState(() =>
+    loadPref('talksmith.practicePrompt', 'free', MeetingData.PRACTICE_PROMPTS.map(p => p.id)));
+  React.useEffect(() => { try { localStorage.setItem('talksmith.practicePrompt', promptId); } catch {} }, [promptId]);
+  const micScenario = React.useMemo(
+    () => (micMode ? MeetingData.micScenario(mic.lines, promptId) : null),
+    [micMode, mic.lines, promptId]
+  );
+  // Saving is explicit: nothing is stored unless you press Save. `savedLines`
+  // remembers which transcript was saved so the button can say so.
+  const [savedLines, setSavedLines] = React.useState(null);
+  const saveMicSession = () => {
+    if (MeetingData.saveSession(mic.lines, promptId)) setSavedLines(mic.lines);
+  };
   const sim = MeetingData.useMeetingSim({
-    running: running && !idle && screenWantsSim,
-    speed, activeGoal, scenarioId,
+    running: micMode ? mic.listening : running && !idle && screenWantsSim,
+    speed: micMode ? 1 : speed, activeGoal, scenarioId, scenario: micScenario,
   });
+  tRef.current = sim.t;
+  // Leaving mic mode releases the microphone.
+  React.useEffect(() => { if (!micMode) mic.stop(); }, [micMode, mic.stop]);
+  const toggleRun = () => {
+    if (!micMode) return setRunning(r => !r);
+    if (mic.listening) mic.stop(); else mic.start();
+  };
+  const toggleRunRef = React.useRef(toggleRun);
+  toggleRunRef.current = toggleRun;
 
   const [reviewT, setReviewT] = React.useState(42);
   const [reviewPlaying, setReviewPlaying] = React.useState(false);
@@ -3377,7 +3982,7 @@ function App() {
         return;
       } else if (e.key === ' ') {
         if (isActivatableTarget(e.target)) return;
-        if (cur === 'live' || cur === 'overlay') setRunning(r => !r);
+        if (cur === 'live' || cur === 'overlay') toggleRunRef.current();
         if (cur === 'review') setReviewPlaying(p => !p);
         e.preventDefault();
       } else if (e.key === 'Escape') {
@@ -3422,8 +4027,9 @@ function App() {
   };
 
   const meetingState = screen === 'live' || screen === 'overlay'
-    ? { recording: running && !idle, timecode: sim.tc }
+    ? { recording: micMode ? mic.listening : running && !idle, timecode: sim.tc }
     : null;
+  const simRunning = micMode ? mic.listening : running;
 
   return (
     <div style={appStyles.chrome} data-screen-label={`Talksmith — ${screen}`}>
@@ -3441,7 +4047,48 @@ function App() {
         display: 'flex', alignItems: 'center', gap: 10, padding: '0 14px',
         background: 'var(--bg-0)',
       }}>
-        {screen === 'live' && (
+        {screen === 'live' && micMode && (
+          <>
+            <span data-testid="active-scenario-name"><Chip tone="neutral">{sim.scenario.name}</Chip></span>
+            {!mic.listening && mic.lines.length === 0 && (
+              <select data-testid="practice-prompt" value={promptId} onChange={(e) => setPromptId(e.target.value)}
+                aria-label="Practice prompt"
+                style={{
+                  fontFamily: 'inherit', fontSize: 11.5, padding: '3px 6px',
+                  background: 'var(--bg-inset)', color: 'var(--ink-0)',
+                  border: '1px solid var(--line)', borderRadius: 5, cursor: 'pointer',
+                }}>
+                {MeetingData.PRACTICE_PROMPTS.map(p => (
+                  <option key={p.id} value={p.id}>{p.title}{p.targetSec ? ` · ${p.targetSec}s` : ''}</option>
+                ))}
+              </select>
+            )}
+            <span data-testid="mic-status" data-status={mic.status} style={{ fontSize: 12, color: mic.status === 'denied' || mic.status === 'error' || mic.status === 'unsupported' ? 'var(--rose)' : 'var(--ink-2)' }}>
+              {mic.status === 'unsupported' ? 'Live mic needs a browser with speech recognition (Chrome, Edge or Safari).'
+                : mic.status === 'denied' ? 'Microphone access was blocked — allow it in the address bar, then press Start.'
+                : mic.status === 'error' ? `Speech recognition stopped: ${mic.error}`
+                : mic.listening ? 'Listening — speak as you would in the meeting.'
+                : mic.lines.length ? 'Stopped. Save keeps this session in this browser only.'
+                : 'Press Start and speak. Your browser transcribes (in Chrome, audio goes to Google); nothing is saved unless you press Save.'}
+            </span>
+            <div style={{ flex: 1 }}/>
+            {mic.lines.length > 0 && !mic.listening && (
+              <>
+                <button data-testid="save-session" onClick={saveMicSession}
+                  disabled={savedLines === mic.lines} style={subBtn(savedLines === mic.lines)}>
+                  {savedLines === mic.lines && I('check', { size: 12 })}
+                  {savedLines === mic.lines ? 'Saved' : 'Save session'}
+                </button>
+                <button onClick={() => { mic.clear(); sim.setT(0); }} style={subBtn(false)}>Clear</button>
+              </>
+            )}
+            <button data-testid="mic-toggle" onClick={toggleRun} disabled={mic.status === 'unsupported'}
+              style={subBtn(mic.listening)}>
+              {I('mic', { size: 12 })}{mic.listening ? 'Stop mic' : 'Start mic'}
+            </button>
+          </>
+        )}
+        {screen === 'live' && !micMode && (
           <>
             <span data-testid="active-scenario-name"><Chip tone="neutral">{sim.scenario.name}</Chip></span>
             <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{sim.scenario.summary}</span>
@@ -3483,25 +4130,30 @@ function App() {
               {Object.keys(MeetingData.SCENARIOS).length} meetings analyzed
             </span>
             <div style={{ flex: 1 }}/>
-            <button style={subBtn(false)}>Explain model</button>
+            <button data-testid="explain-model-button" onClick={() => setExplainOpen(true)} style={subBtn(explainOpen)}>
+              Explain model
+            </button>
           </>
         )}
       </div>
 
-      {idle && screen === 'live' ? (
+      {idle && screen === 'live' && !micMode ? (
         <IdleState scenario={sim.scenario} onStart={() => setIdle(false)} onReview={() => setScreen('review')}/>
       ) : screen === 'live' ? (
-        <LiveDashboard sim={sim} running={running} onToggleRun={() => setRunning(r => !r)}
+        <LiveDashboard sim={sim} running={simRunning} onToggleRun={toggleRun}
+          interim={micMode ? mic.interim : ''}
           muted={muted} onToggleMute={() => setMuted(m => !m)}
           variant={nudgeStyle} speed={speed} onSpeed={setSpeed}/>
       ) : screen === 'overlay' ? (
-        <CompactOverlay sim={sim} running={running} onExpand={() => setScreen('live')}
+        <CompactOverlay sim={sim} running={simRunning} onExpand={() => setScreen('live')}
           muted={muted} onToggleMute={() => setMuted(m => !m)}/>
       ) : screen === 'review' ? (
         <Review sim={reviewSim} t={reviewT} setT={setReviewT}
           playing={reviewPlaying} onTogglePlay={() => setReviewPlaying(p => !p)}/>
       ) : (
-        <Profile activeGoal={activeGoal} setActiveGoal={setActiveGoal}/>
+        <Profile activeGoal={activeGoal} setActiveGoal={setActiveGoal}
+          range={profileRange} setRange={setProfileRange}
+          explainOpen={explainOpen} onCloseExplain={closeExplain}/>
       )}
 
       <div style={{
@@ -3511,7 +4163,7 @@ function App() {
         fontSize: 10.5, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)',
       }}>
         <span>Talksmith v0.4.2</span><span>·</span>
-        <span>On-device audio · cloud analysis</span>
+        <span>{micMode ? 'Browser speech recognition · analysis in this page' : 'On-device audio · cloud analysis'}</span>
         <div style={{ flex: 1 }}/>
         <span>⌘, settings</span><span>·</span>
         <span>⌘M mute coaching</span>
@@ -3643,12 +4295,11 @@ function TweaksPanel({ theme, setTheme, nudgeStyle, setNudgeStyle, scenarioId, s
               {Object.values(scenarios).map(s => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
+              <option value={MeetingData.MIC_SCENARIO_ID}>Live mic (practice)</option>
             </select>
-            {activeScenario && (
-              <div style={{ fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.4 }}>
-                {activeScenario.summary}
-              </div>
-            )}
+            <div style={{ fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.4 }}>
+              {activeScenario ? activeScenario.summary : 'Coach yourself on your own speech, live.'}
+            </div>
           </div>
         )}
         <div>

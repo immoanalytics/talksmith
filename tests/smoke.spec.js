@@ -14,7 +14,9 @@ const { test, expect } = require('@playwright/test');
 
 const path = require('path');
 
-const APP_PATH = '/Talksmith.html';
+// Dev page by default; `npm run test:dist` runs the same suite against the
+// production build (TALKSMITH_APP=/dist/index.html).
+const APP_PATH = process.env.TALKSMITH_APP || '/Talksmith.html';
 const NODE_MODULES = path.resolve(__dirname, '..', 'node_modules');
 
 // Serve the CDN scripts from node_modules so the suite is hermetic: no
@@ -394,10 +396,200 @@ test.describe('profile trend charts', () => {
 
 test.describe('boot resilience', () => {
   test('a CDN failure replaces the spinner with a clear message', async ({ page, context }) => {
-    // Registered after the beforeEach routes, so it takes precedence.
-    await context.route('https://unpkg.com/react@18.3.1/umd/react.production.min.js', r => r.abort());
+    // Registered after the beforeEach routes, so it takes precedence. Matches
+    // the CDN URL (dev page) and the vendored file (build) alike.
+    await context.route(/\/react(@[\d.]+\/umd\/react|-[\d.]+\.[0-9a-f]+)\.(production\.)?min\.js$/, r => r.abort());
     await page.goto(APP_PATH);
     await expect(page.locator('.ts-boot--failed')).toBeVisible();
-    await expect(page.locator('.ts-boot__hint')).toContainText("Couldn't load unpkg.com/react@18.3.1");
+    await expect(page.locator('.ts-boot__hint')).toContainText("Couldn't load");
+  });
+});
+
+test.describe('profile controls', () => {
+  test('range buttons filter the meetings the model uses', async ({ page }) => {
+    await bootApp(page);
+    await page.locator('[data-testid="screen-tab-profile"]').click();
+    const counts = await page.evaluate(() => {
+      const md = window.MeetingData;
+      const out = {};
+      for (const [k, d] of Object.entries(md.PROFILE_RANGES)) out[k] = md.profileModel({ rangeDays: d }).n;
+      return out;
+    });
+    // Fewer days can never include more meetings.
+    expect(counts['7d']).toBeLessThanOrEqual(counts['30d']);
+    expect(counts['30d']).toBeLessThan(counts['All']);
+    for (const r of ['7d', '30d', 'All']) {
+      await page.locator(`[data-testid="range-${r}"]`).click();
+      await expect(page.locator(`[data-testid="range-${r}"]`)).toHaveAttribute('aria-pressed', 'true');
+      // One chart point per meeting in range (3 charts).
+      await expect(page.locator('[data-testid="trend-chart"] circle')).toHaveCount(counts[r] * 3);
+    }
+  });
+
+  test('goal targets are editable and persist', async ({ page }) => {
+    await bootApp(page);
+    await page.locator('[data-testid="screen-tab-profile"]').click();
+    await page.locator('[data-testid="edit-targets"]').click();
+    await page.locator('[data-testid="target-listen"]').fill('40');
+    await page.locator('[data-testid="edit-targets"]').click();
+    const listening = await page.evaluate(() => window.MeetingData.profileModel().goalProgress.listen);
+    const delta = listening - 40;
+    await expect(page.getByText(`${delta > 0 ? '+' : ''}${delta}`, { exact: true }).first()).toBeVisible();
+    await page.reload();
+    await page.locator('[data-testid="title-bar"]').waitFor();
+    await page.locator('[data-testid="edit-targets"]').click();
+    await expect(page.locator('[data-testid="target-listen"]')).toHaveValue('40');
+  });
+
+  test('Explain model opens a dialog with the per-meeting scores and closes on Escape', async ({ page }) => {
+    await bootApp(page);
+    await page.locator('[data-testid="screen-tab-profile"]').click();
+    await page.locator('[data-testid="explain-model-button"]').click();
+    const dialog = page.getByRole('dialog', { name: 'How your scores are computed' });
+    await expect(dialog).toBeVisible();
+    for (const s of ['Q2 roadmap sync', 'Skip-level feedback', 'Eng standup decision']) {
+      await expect(dialog).toContainText(s);
+    }
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+  });
+});
+
+// A scriptable stand-in for the Web Speech API: tests "speak" by calling
+// window.__speech.say(text) (final result) or .hear(text) (interim).
+async function installFakeSpeech(page, { deny = false } = {}) {
+  await page.addInitScript(({ deny }) => {
+    class FakeRecognition {
+      start() {
+        if (deny) { setTimeout(() => this.onerror && this.onerror({ error: 'not-allowed' }), 0); return; }
+        window.__speech.active = this;
+      }
+      abort() { if (window.__speech.active === this) window.__speech.active = null; }
+      stop() { this.abort(); }
+    }
+    const emit = (text, isFinal) => {
+      const rec = window.__speech.active;
+      if (!rec) throw new Error('speech recognition is not listening');
+      const result = [{ transcript: text }];
+      result.isFinal = isFinal;
+      rec.onresult({ resultIndex: 0, results: [result] });
+    };
+    window.__speech = { active: null, say: (t) => emit(t, true), hear: (t) => emit(t, false) };
+    window.SpeechRecognition = FakeRecognition;
+  }, { deny });
+}
+
+async function startMicMode(page) {
+  await page.locator('[data-testid="screen-tab-live"]').click();
+  await page.locator('[data-testid="settings-button"] button').click();
+  await page.locator('[data-testid="scenario-picker"]').selectOption('mic');
+  await page.keyboard.press('Escape');
+  await page.locator('[data-testid="mic-toggle"]').click();
+  await expect(page.locator('[data-testid="mic-status"]')).toHaveAttribute('data-status', 'listening');
+}
+
+test.describe('live mic practice', () => {
+  test('coaching is derived from what was said', async ({ page }) => {
+    await bootApp(page);
+    const r = await page.evaluate(() => {
+      const md = window.MeetingData;
+      const filler = 'Um so basically I like want to um talk about the plan and like you know basically um what we do next and uh how we get there';
+      const clean = 'We ship the onboarding rework in May. Search gets a two week ranking spike. Marcus owns the plan and Priya owns the metrics review.';
+      const lines = (txt) => [0, 8, 16, 24].map(t => ({ t, s: 'you', txt }));
+      return {
+        filler: md.deriveCoaching(lines(filler)).nudges.map(n => n.id),
+        clean: md.deriveCoaching(lines(clean)).nudges.map(n => n.id),
+        question: md.deriveCoaching([{ t: 0, s: 'you', txt: 'What do you each think we should do next?' }]).nudges.map(n => n.id),
+      };
+    });
+    expect(r.filler).toContain('mic-fillers');
+    expect(r.clean).not.toContain('mic-fillers');
+    expect(r.clean).toContain('mic-clean');
+    expect(r.question).toContain('mic-question');
+  });
+
+  test('speech becomes the transcript and drives cues, review and export', async ({ page }) => {
+    await installFakeSpeech(page);
+    await bootApp(page);
+    await startMicMode(page);
+
+    await page.evaluate(() => window.__speech.hear('um so basically'));
+    await expect(page.locator('[data-testid="interim-transcript"]')).toContainText('um so basically');
+
+    const filler = 'um so basically I like want to um talk about the plan and like you know basically um what we do next';
+    for (let i = 0; i < 3; i++) await page.evaluate((t) => window.__speech.say(t), filler);
+    await expect(page.getByText('Um so basically I like want to').first()).toBeVisible();
+    await expect(page.locator('[data-testid="active-cue"][data-cue-id="mic-fillers"]')).toBeVisible();
+
+    // Group-only panels are hidden for a solo session.
+    await expect(page.getByText('Team dynamics coach')).toHaveCount(0);
+
+    await page.locator('[data-testid="mic-toggle"]').click();
+    await expect(page.locator('[data-testid="mic-status"]')).toHaveAttribute('data-status', 'idle');
+
+    await page.locator('[data-testid="screen-tab-review"]').click();
+    await expect(page.locator('[data-testid="score-bar"]')).toContainText('Live mic practice');
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.locator('[data-testid="export-notes"]').click(),
+    ]);
+    const text = require('fs').readFileSync(await download.path(), 'utf8');
+    expect(text).toContain('Filler words');
+    expect(text).toContain('Um so basically I like want to');
+  });
+
+  test('a blocked microphone is explained, not silent', async ({ page }) => {
+    await installFakeSpeech(page, { deny: true });
+    await bootApp(page);
+    await page.locator('[data-testid="screen-tab-live"]').click();
+    await page.locator('[data-testid="settings-button"] button').click();
+    await page.locator('[data-testid="scenario-picker"]').selectOption('mic');
+    await page.keyboard.press('Escape');
+    await page.locator('[data-testid="mic-toggle"]').click();
+    await expect(page.locator('[data-testid="mic-status"]')).toHaveAttribute('data-status', 'denied');
+    await expect(page.locator('[data-testid="mic-status"]')).toContainText('Microphone access was blocked');
+  });
+});
+
+test.describe('practice prompts and saved sessions', () => {
+  test('a prompt shows its brief and time goal, and a saved session lands in Profile', async ({ page }) => {
+    await installFakeSpeech(page);
+    await bootApp(page);
+    await page.locator('[data-testid="screen-tab-live"]').click();
+    await page.locator('[data-testid="settings-button"] button').click();
+    await page.locator('[data-testid="scenario-picker"]').selectOption('mic');
+    await page.keyboard.press('Escape');
+
+    await page.locator('[data-testid="practice-prompt"]').selectOption('pitch');
+    await expect(page.locator('[data-testid="practice-prompt-card"]')).toContainText('Pitch your top priority');
+    await expect(page.locator('[data-testid="time-goal"]')).toContainText('/ 60s');
+
+    await page.locator('[data-testid="mic-toggle"]').click();
+    await page.evaluate(() => window.__speech.say('We should put onboarding first because the funnel data is clear'));
+    await page.locator('[data-testid="mic-toggle"]').click();
+    await page.locator('[data-testid="save-session"]').click();
+    await expect(page.locator('[data-testid="save-session"]')).toHaveText(/Saved/);
+
+    await page.locator('[data-testid="screen-tab-profile"]').click();
+    const row = page.locator('[data-testid="practice-session"]');
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText('Pitch your top priority');
+
+    // Survives a reload (stored locally), and can be deleted.
+    await page.reload();
+    await page.locator('[data-testid="title-bar"]').waitFor();
+    await expect(row).toHaveCount(1);
+    await page.getByRole('button', { name: /Delete session/ }).click();
+    await expect(row).toHaveCount(0);
+    expect(await page.evaluate(() => window.MeetingData.loadSessions().length)).toBe(0);
+  });
+
+  test('nothing is saved unless you press Save', async ({ page }) => {
+    await installFakeSpeech(page);
+    await bootApp(page);
+    await startMicMode(page);
+    await page.evaluate(() => window.__speech.say('Just thinking out loud here'));
+    await page.locator('[data-testid="mic-toggle"]').click();
+    expect(await page.evaluate(() => window.MeetingData.loadSessions().length)).toBe(0);
   });
 });
